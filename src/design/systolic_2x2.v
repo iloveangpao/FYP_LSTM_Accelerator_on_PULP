@@ -28,177 +28,154 @@ module systolic_2x2 #(
     input wire clk, rst, start,              // Control signals
     input wire [data_width-1:0] a0_in, a1_in, // Input matrices A row elements
     input wire [data_width-1:0] b0_in, b1_in, // Input matrices B column elements
-    output reg [acc_width-1:0] output_buffer_c00_0, output_buffer_c00_1,
-    output reg [acc_width-1:0] output_buffer_c01_0, output_buffer_c01_1,
-    output reg [acc_width-1:0] output_buffer_c10_0, output_buffer_c10_1,
-    output reg [acc_width-1:0] output_buffer_c11_0, output_buffer_c11_1,
-    output reg active_buffer
-    // output reg [acc_width-1:0] c00_out, c01_out, c10_out, c11_out
+    output wire [acc_width-1:0] output_buffer_c00_0, output_buffer_c00_1,
+    output wire [acc_width-1:0] output_buffer_c01_0, output_buffer_c01_1,
+    output wire [acc_width-1:0] output_buffer_c10_0, output_buffer_c10_1,
+    output wire [acc_width-1:0] output_buffer_c11_0, output_buffer_c11_1,
+    output wire active_buffer
 );
 
-    // Double buffering for outputs - separate registers for each buffer
-    // reg [acc_width-1:0] output_buffer_c00_0, output_buffer_c00_1;
-    // reg [acc_width-1:0] output_buffer_c01_0, output_buffer_c01_1;
-    // reg [acc_width-1:0] output_buffer_c10_0, output_buffer_c10_1;
-    // reg [acc_width-1:0] output_buffer_c11_0, output_buffer_c11_1;
+    // ======== Synchronize the Reset Signal ==========
+    reg rst_sync_1, rst_sync_2;
 
-    // reg active_buffer;     // Active buffer selector (0 or 1)
-    reg [3:0] cycle_count; // Cycle counter
-
-    // Intermediate wires to hold the outputs of each PE
-    wire [acc_width-1:0] pe00_out, pe01_out, pe10_out, pe11_out;
-
-    // Internal wires for PE interconnections
-    wire [data_width-1:0] a01, a11, b10, b11;
-
-    // Assign the current active input buffer to the systolic array inputs
-    reg [data_width-1:0] a00_input;
-    reg [data_width-1:0] a01_input;
-    reg [data_width-1:0] a10_input;
-    reg [data_width-1:0] a11_input;
-    reg [data_width-1:0] b00_input;
-    reg [data_width-1:0] b01_input;
-    reg [data_width-1:0] b10_input;
-    reg [data_width-1:0] b11_input;
-
-    // Enable signals for PEs
-    wire en = (cycle_count < MM_CYCLES); // Enable PEs during MM operation
-
-    // Toggle between buffers for double buffering
-    always @(posedge clk or posedge rst) begin
+    always @(posedge clk_mmcm_bufg or posedge rst) begin
         if (rst) begin
+            rst_sync_1 <= 1'b1;
+            rst_sync_2 <= 1'b1;
+        end else begin
+            rst_sync_1 <= 1'b0;
+            rst_sync_2 <= rst_sync_1;
+        end
+    end
+
+    // Use synchronized reset
+    wire rst_sync = rst_sync_2;
+
+    // ======== MMCM Configuration for Clock ==========
+    wire clk_mmcm_out, clk_mmcm_bufg, locked;
+
+    MMCME2_BASE #(
+        .CLKIN1_PERIOD(5.0),    // Input clock period = 5 ns (200 MHz)
+        .CLKFBOUT_MULT_F(5.0),  // VCO frequency = 1000 MHz (200 MHz * 5)
+        .DIVCLK_DIVIDE(1),      // No pre-division
+        .CLKOUT0_DIVIDE_F(2.5)  // Output clock = 400 MHz (1000 MHz / 2.5)
+    ) u_mmcm (
+        .CLKIN1(clk),           // Input clock
+        .CLKOUT0(clk_mmcm_out), // MMCM output clock
+        .CLKFBIN(clk_mmcm_out), // Feedback clock
+        .CLKFBOUT(),            // Feedback clock output
+        .LOCKED(locked),        // MMCM lock status
+        .PWRDWN(1'b0),          // Power-down MMCM
+        .RST(rst_sync)          // MMCM reset
+    );
+
+    BUFG u_bufg (
+        .I(clk_mmcm_out),
+        .O(clk_mmcm_bufg)
+    );
+
+    // ======== Buffered Control Signals ==========
+    wire rst_bufg, start_bufg;
+
+    BUFGCE rst_bufg_inst (
+        .I(rst_sync),
+        .CE(1'b1),
+        .O(rst_bufg)
+    );
+
+    BUFGCE start_bufg_inst (
+        .I(start),
+        .CE(1'b1),
+        .O(start_bufg)
+    );
+
+    // ======== Control Logic ==========
+    reg active_buffer_reg;
+    reg [3:0] cycle_count;
+
+    wire en = (cycle_count < MM_CYCLES);
+
+    always @(posedge clk_mmcm_bufg) begin
+        if (rst_bufg) begin
             cycle_count <= 0;
-            active_buffer <= 0;
-
-            a00_input <= 0;
-            a01_input <= 0;
-            a10_input <= 0;
-            a11_input <= 0;
-            b00_input <= 0;
-            b01_input <= 0;
-            b10_input <= 0;
-            b11_input <= 0;
-
-            // Initialize output buffers to zero on reset
-            output_buffer_c00_0 <= 0;
-            output_buffer_c01_0 <= 0;
-            output_buffer_c10_0 <= 0;
-            output_buffer_c11_0 <= 0;
-            output_buffer_c00_1 <= 0;
-            output_buffer_c01_1 <= 0;
-            output_buffer_c10_1 <= 0;
-            output_buffer_c11_1 <= 0;
-
-            // Initialize output registers to zero
-            // c00_out <= 0;
-            // c01_out <= 0;
-            // c10_out <= 0;
-            // c11_out <= 0;
-        end else if (start) begin
-            a00_input <= a0_in;
-            a01_input <= a01;
-            a10_input <= a1_in;
-            a11_input <= a11;
-            b00_input <= b0_in;
-            b01_input <= b1_in;
-            b10_input <= b10;
-            b11_input <= b11;
+            active_buffer_reg <= 0;
+        end else if (start_bufg) begin
             if (cycle_count < MM_CYCLES) begin
-                // Increment cycle count during MM operation
                 cycle_count <= cycle_count + 1;
             end else begin
-                // Reset cycle counter and toggle buffer once MM operation completes
                 cycle_count <= 0;
-                active_buffer <= ~active_buffer; // Toggle buffer
+                active_buffer_reg <= ~active_buffer_reg;
             end
         end else begin
             cycle_count <= 0;
         end
     end
 
-    // Instantiate the PEs in a 2x2 configuration
+    // ======== PEs Instantiation ==========
+    wire [data_width-1:0] a01, a11, b10, b11;
+    wire [acc_width-1:0] pe00_out, pe01_out, pe10_out, pe11_out;
 
-    // PE (0,0)
     pe #(.data_width(data_width), .acc_width(acc_width)) pe00 (
-        .clk(clk),
-        .rst(rst),
+        .clk(clk_mmcm_bufg),
+        .rst(rst_bufg),
         .en(en),
-        .a_in(a00_input),
-        .b_in(b00_input),
+        .a_in(a0_in),
+        .b_in(b0_in),
         .a_out(a01),
         .b_out(b10),
-        .c_out(pe00_out)  // Connect directly to wire
+        .c_out(pe00_out)
     );
 
-    // PE (0,1)
     pe #(.data_width(data_width), .acc_width(acc_width)) pe01 (
-        .clk(clk),
-        .rst(rst),
+        .clk(clk_mmcm_bufg),
+        .rst(rst_bufg),
         .en(en),
-        .a_in(a01_input),
-        .b_in(b01_input),
+        .a_in(a01),
+        .b_in(b1_in),
         .a_out(),
         .b_out(b11),
-        .c_out(pe01_out)  // Connect directly to wire
+        .c_out(pe01_out)
     );
 
-    // PE (1,0)
     pe #(.data_width(data_width), .acc_width(acc_width)) pe10 (
-        .clk(clk),
-        .rst(rst),
+        .clk(clk_mmcm_bufg),
+        .rst(rst_bufg),
         .en(en),
-        .a_in(a10_input),
-        .b_in(b10_input),
+        .a_in(a1_in),
+        .b_in(b10),
         .a_out(a11),
         .b_out(),
-        .c_out(pe10_out)  // Connect directly to wire
+        .c_out(pe10_out)
     );
 
-    // PE (1,1)
     pe #(.data_width(data_width), .acc_width(acc_width)) pe11 (
-        .clk(clk),
-        .rst(rst),
+        .clk(clk_mmcm_bufg),
+        .rst(rst_bufg),
         .en(en),
-        .a_in(a11_input),
-        .b_in(b11_input),
+        .a_in(a11),
+        .b_in(b11),
         .a_out(),
         .b_out(),
-        .c_out(pe11_out)  // Connect directly to wire
+        .c_out(pe11_out)
     );
 
-    // Write PE outputs to the correct buffer based on active_buffer
-    always @(posedge clk) begin
-        if (en) begin
-            if (active_buffer == 0) begin
-                output_buffer_c00_0 <= pe00_out;
-                output_buffer_c01_0 <= pe01_out;
-                output_buffer_c10_0 <= pe10_out;
-                output_buffer_c11_0 <= pe11_out;
-            end else begin
-                output_buffer_c00_1 <= pe00_out;
-                output_buffer_c01_1 <= pe01_out;
-                output_buffer_c10_1 <= pe10_out;
-                output_buffer_c11_1 <= pe11_out;
-            end
+    // ======== Output Buffers ==========
+    reg [acc_width-1:0] output_buffer_c00_0_reg, output_buffer_c00_1_reg;
+
+    always @(posedge clk_mmcm_bufg) begin
+        if (!active_buffer_reg) begin
+            output_buffer_c00_0_reg <= pe00_out;
+        end else begin
+            output_buffer_c00_1_reg <= pe00_out;
         end
     end
 
-    // // Output result assignments (from the inactive buffer, which holds stable data)
-    // always @(posedge clk) begin
-    //     if (~active_buffer) begin
-    //         c00_out <= output_buffer_c00_0;
-    //         c01_out <= output_buffer_c01_0;
-    //         c10_out <= output_buffer_c10_0;
-    //         c11_out <= output_buffer_c11_0;
-    //     end else begin
-    //         c00_out <= output_buffer_c00_1;
-    //         c01_out <= output_buffer_c01_1;
-    //         c10_out <= output_buffer_c10_1;
-    //         c11_out <= output_buffer_c11_1;
-    //     end
-    // end
+    assign active_buffer = active_buffer_reg;
+    assign output_buffer_c00_0 = output_buffer_c00_0_reg;
+    assign output_buffer_c00_1 = output_buffer_c00_1_reg;
 
 endmodule
+
 
 
 
