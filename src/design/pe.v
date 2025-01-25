@@ -30,30 +30,46 @@ module pe #(
     output reg [acc_width-1:0] c_out
 );
 
+    // Internal Registers
     reg [data_width-1:0] a_reg, b_reg;
-    reg [acc_width-1:0] mul_reg, acc_reg;
+    reg [acc_width-1:0] dsp_out_reg;  // Pipeline register for DSP output
+    wire [acc_width-1:0] dsp_out;  // Intermediate wire for DSP output
 
+    // Clock Enable Logic
     always @(posedge clk) begin
         if (rst) begin
             a_reg <= 0;
             b_reg <= 0;
-            mul_reg <= 0;
-            acc_reg <= 0;
+            c_out <= 0;
+            dsp_out_reg <= 0;
             a_out <= 0;
             b_out <= 0;
-            c_out <= 0;
         end else if (en) begin
             a_reg <= a_in;
             b_reg <= b_in;
-            (* use_dsp = "yes" *)
-            mul_reg <= a_reg * b_reg;
-            acc_reg <= acc_reg + mul_reg;
+            
+            // Stage 2: Propagate DSP output and register intermediate values
+            dsp_out_reg <= dsp_out;
+            c_out <= dsp_out_reg;
+
+            // Propagate `a` and `b` outputs
             a_out <= a_reg;
             b_out <= b_reg;
-            c_out <= acc_reg;
         end
     end
+
+    // DSP IP Instantiation
+    dsp_mul dsp_inst (
+        .CLK(clk),                // Connect clock signal
+        .SCLR(rst),               // Synchronous clear
+        .A(a_reg),                // First operand from internal register
+        .B(b_reg),                // Second operand from internal register
+        .P(dsp_out)               // DSP output connected to intermediate wire
+    );
+
 endmodule
+
+
 
 
 
