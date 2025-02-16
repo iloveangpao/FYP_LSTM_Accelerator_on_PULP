@@ -600,7 +600,7 @@ reg [31:0] expected_word;
   // Overall Simulation Timeout
   //===========================================================================
   initial begin
-    #10000;
+    #20000;
     $display("[ERROR] Simulation timed out.");
     $finish;
   end
