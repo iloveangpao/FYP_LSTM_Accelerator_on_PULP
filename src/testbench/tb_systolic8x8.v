@@ -26,7 +26,7 @@ module tb_systolic_array_8x8();
 
     // Parameters
     parameter data_width = 8;           // Input data width (e.g., 8 bits)
-    parameter acc_width = 2 * data_width; // Accumulated data width
+    parameter acc_width = 4 * data_width; // Accumulated data width
 
     // Clock and reset signals
     reg clk;
@@ -187,7 +187,7 @@ module tb_systolic_array_8x8();
         end
 
         // Allow time for full propagation
-        #200;
+        #190;
 
         // Validate outputs
         validate_outputs(expected_c_out);
