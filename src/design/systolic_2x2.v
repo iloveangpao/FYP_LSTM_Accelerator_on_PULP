@@ -43,32 +43,6 @@ module systolic_2x2 #(
     // output wire clock_locked 
 );
 
-    // wire clk_buf;
-    // wire locked;
-    // reg rst_sync;
-    // // BUFG clk_bufg_inst (
-    // //     .I(clk),
-    // //     .O(clk_buf)
-    // // );
-
-    // clk_2x2 clk_inst(
-    //     .reset(rst),
-    //     .clk_in1(clk),
-    //     .clk_out1(clk_buf),
-    //     .locked(locked)
-    // );
-    // assign clock_locked = locked;
-    // // Synchronized Reset Logic
-    // always @(posedge clk_buf or posedge rst) begin
-    //     if (rst) begin
-    //         rst_sync <= 1'b1;
-    //     end else if (!locked) begin
-    //         rst_sync <= 1'b1;
-    //     end else begin
-    //         rst_sync <= 1'b0;
-    //     end
-    // end
-
     // Processing Elements
     wire [data_width-1:0] a01, a11, b10, b11;
 
