@@ -304,7 +304,7 @@ reg [31:0] expected_word;
       S_AXI_0_araddr  = addr;
       S_AXI_0_arlen   = 8'h00;      // Single transfer
       S_AXI_0_arsize  = 3'b010;
-      S_AXI_0_arburst = 2'b00;
+      S_AXI_0_arburst = 2'b01;
       S_AXI_0_arlock  = 0;
       S_AXI_0_arvalid = 1;
       S_AXI_0_rready  = 1;

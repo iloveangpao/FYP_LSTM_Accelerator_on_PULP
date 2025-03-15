@@ -49,7 +49,7 @@ module axi_read_fsm(
             m_axi_arprot    <= 3'd0;
             m_axi_rready    <= 1'b0;
             timeout_counter <= 8'd0;
-            $display("[FSM] Reset");
+            // $display("[AXI_READ_FSM] Reset");
         end else begin
             case (state)
                 IDLE: begin
@@ -67,7 +67,7 @@ module axi_read_fsm(
                         m_axi_rready  <= 1'b1;
                         timeout_counter <= 8'd0;
                         state <= DRIVE_READ;
-                        $display("[FSM] Start detected, moving to WAIT_FOR_ARREADY, addr: 0x%08h", read_addr);
+                        // $display("[AXI_READ_FSM] Start detected, moving to WAIT_FOR_ARREADY, addr: 0x%08h", read_addr);
                     end
                 end
 
@@ -85,14 +85,14 @@ module axi_read_fsm(
                 WAIT_FOR_LAST: begin
                     timeout_counter <= timeout_counter + 1;
                     if (m_axi_rlast) begin
-                        $display("[FSM] RVALID asserted");
+                        // $display("[AXI_READ_FSM] RVALID asserted");
                         read_data <= m_axi_rdata;
                         m_axi_rready <= 1'b0;
                         m_axi_arvalid <= 1'b0;
-                        $display("[FSM] Captured RDATA=%0h", m_axi_rdata);
+                        // $display("[AXI_READ_FSM] Captured RDATA=%0h", m_axi_rdata);
                         state <= DONE;
                     end else if (timeout_counter >= 10) begin
-                        $display("[FSM] ERROR: Timeout waiting for RLAST, forcing transition");
+                        // $display("[AXI_READ_FSM] ERROR: Timeout waiting for RLAST, forcing transition");
                         state <= DONE;
                         m_axi_rready <= 1'b0;
                         m_axi_arvalid <= 1'b0;
@@ -104,7 +104,7 @@ module axi_read_fsm(
                     busy  <= 1'b0;
                     m_axi_rready <= 1'b0;
                     m_axi_arvalid <= 1'b0;
-                    $display("[FSM] Transaction complete, read_data=%0h", read_data);
+                    // $display("[AXI_READ_FSM] Transaction complete, read_data=%0h", read_data);
                     state <= IDLE;
                 end
 

@@ -140,7 +140,7 @@ module axi_a_input_extractor_top #(
                           current_i <= 4'd0;
                       else
                           current_i <= cycle - 4'd7;
-                      $display("[Extractor] Cycle=%0d, start_i=%0d, end_i=%0d", cycle, (cycle<=7?0:cycle-7), (cycle<=7?cycle:7));
+                    //   $display("[Extractor] Cycle=%0d, start_i=%0d, end_i=%0d", cycle, (cycle<=7?0:cycle-7), (cycle<=7?cycle:7));
                       state <= T_READ;
                   end
               end
@@ -149,14 +149,14 @@ module axi_a_input_extractor_top #(
                   // Issue read for element A[current_i][cycle - current_i]
                   axi_read_addr <= computed_addr;
                   axi_start <= 1'b1;
-                  $display("[Extractor] T_READ: current_i=%0d, j_val=%0d, computed_addr=%0h", current_i, j_val, computed_addr);
+                //   $display("[Extractor] T_READ: current_i=%0d, j_val=%0d, computed_addr=%0h", current_i, j_val, computed_addr);
                   state <= T_WAIT;
               end
 
               T_WAIT: begin
                   axi_start <= 1'b0;
                   if (fsm_valid) begin
-                      $display("[Extractor] T_WAIT: fsm_valid asserted, extracted_byte=0x%02h", extracted_byte);
+                    //   $display("[Extractor] T_WAIT: fsm_valid asserted, extracted_byte=0x%02h", extracted_byte);
                       state <= T_STORE;
                   end
               end
@@ -164,7 +164,7 @@ module axi_a_input_extractor_top #(
               T_STORE: begin
                   // Store the extracted byte into the result at the byte lane corresponding to current_i.
                   result_reg[(current_i*8) +: 8] <= extracted_byte;
-                  $display("[Extractor] T_STORE: Stored byte=0x%02h at row %0d", extracted_byte, current_i);
+                //   $display("[Extractor] T_STORE: Stored byte=0x%02h at row %0d", extracted_byte, current_i);
                   if (current_i < end_i) begin
                       current_i <= current_i + 1;
                       state <= T_READ;
