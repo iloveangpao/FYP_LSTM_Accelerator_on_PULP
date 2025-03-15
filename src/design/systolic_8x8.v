@@ -7,10 +7,10 @@ module systolic_array_8x8 #(
     input wire clk,                        // System clock
     input wire rst,                        // Asynchronous reset
     input wire en,                         // Enable signal
-    input wire [8 * 8 * data_width - 1:0] a_in_flat, // Flattened input for A (8x8 matrix)
-    input wire [8 * 8 * data_width - 1:0] b_in_flat, // Flattened input for B (8x8 matrix)
-    output wire [8 * 8 * data_width - 1:0] a_out_flat, // Flattened output for A
-    output wire [8 * 8 * data_width - 1:0] b_out_flat, // Flattened output for B
+    input wire [8 * data_width - 1:0] a_in_flat, // Flattened input for A (8x8 matrix)
+    input wire [8 * data_width - 1:0] b_in_flat, // Flattened input for B (8x8 matrix)
+    output wire [8 * data_width - 1:0] a_out_flat, // Flattened output for A
+    output wire [8 * data_width - 1:0] b_out_flat, // Flattened output for B
     output wire [64 * acc_width - 1:0] c_out_flat,       // Flattened output for C (8x8 matrix)
     output wire locked
 );
