@@ -4,186 +4,200 @@ module axi_a_input_extractor_top #(
 )(
     input  wire         clk,
     input  wire         rst,
-    input  wire         start,       // One-cycle pulse to trigger extraction
-    input  wire [3:0]   cycle,       // Computation cycle index (0 to 14 valid)
-    output reg  [63:0]  a_flat_out,  // Final 64-bit flat A input output
-    output reg          valid,       // Asserted when a_flat_out is ready
+    input  wire         load_start,  // Pulse to trigger matrix loading (via S_AXI_1)
+    input  wire         start,       // Pulse to trigger diagonal extraction
+    input  wire         extract_reset,       // Pulse to trigger diagonal extraction
+    output reg  [63:0]  a_flat_out,  // Diagonal extraction output (one byte per row)
+    output wire  [3:0]   valid_cycle,       // Asserted when a_flat_out is ready
+    output wire         input_loaded,
 
-    // Exposed AXI Read Interface signals (from the memory_block_wrapper)
-    output wire [11:0]  m_axi_araddr,
-    output wire [2:0]   m_axi_arsize,
-    output wire         m_axi_arvalid,
-    output wire [1:0]   m_axi_arburst,
-    output wire [3:0]   m_axi_arcache,
-    output wire [7:0]   m_axi_arlen,
-    output wire         m_axi_arlock,
-    output wire [2:0]   m_axi_arprot,
+    // S_AXI_1 Read Interface (connected to your memory block’s S_AXI_1 port)
+    output reg  [11:0]  m_axi_araddr,
+    output reg  [2:0]   m_axi_arsize,
+    output reg          m_axi_arvalid,
+    output reg  [1:0]   m_axi_arburst,
+    output reg  [3:0]   m_axi_arcache,
+    output reg  [7:0]   m_axi_arlen,
+    output reg          m_axi_arlock,
+    output reg  [2:0]   m_axi_arprot,
     input  wire         m_axi_arready,
     input  wire [31:0]  m_axi_rdata,
     input  wire         m_axi_rvalid,
     input  wire         m_axi_rlast,
-    output wire         m_axi_rready
+    output reg          m_axi_rready
 );
 
   //-------------------------------------------------------------------------
-  // Internal signals to interface with the AXI read FSM
+  // FSM State Encoding
   //-------------------------------------------------------------------------
-  reg         axi_start;
-  reg  [11:0] axi_read_addr;
-  wire [31:0] fsm_read_data;
-  wire        fsm_valid;
-  wire        fsm_busy;
-  
-  // Instantiate the AXI read FSM.
-  axi_read_fsm fsm_inst (
-      .clk(clk),
-      .rst(rst),
-      .start(axi_start),
-      .read_addr(axi_read_addr),
-      .read_data(fsm_read_data),
-      .valid(fsm_valid),
-      .busy(fsm_busy),
-      // Expose all AXI signals directly from the FSM.
-      .m_axi_araddr(m_axi_araddr),
-      .m_axi_arsize(m_axi_arsize),
-      .m_axi_arvalid(m_axi_arvalid),
-      .m_axi_arburst(m_axi_arburst),
-      .m_axi_arcache(m_axi_arcache),
-      .m_axi_arlen(m_axi_arlen),
-      .m_axi_arlock(m_axi_arlock),
-      .m_axi_arprot(m_axi_arprot),
-      .m_axi_arready(m_axi_arready),
-      .m_axi_rdata(m_axi_rdata),
-      .m_axi_rvalid(m_axi_rvalid),
-      .m_axi_rlast(m_axi_rlast),
-      .m_axi_rready(m_axi_rready)
-  );
-  
-  //-------------------------------------------------------------------------
-  // Extraction FSM: Assemble a 64-bit word with one byte per valid row.
-  // For cycle c:
-  //   - if (c <= 7): valid rows = 0 ... c.
-  //   - if (c > 7): valid rows = (c - 7) ... 7.
-  // For each valid row i, the element chosen is A[i][j] with j = c - i.
-  // For rows not valid in the cycle, the corresponding byte is 0.
-  //-------------------------------------------------------------------------
-  localparam T_IDLE  = 3'd0,
-             T_READ  = 3'd1,
-             T_WAIT  = 3'd2,
-             T_STORE = 3'd3,
-             T_DONE  = 3'd4;
+  localparam S_WAIT_LOAD  = 3'd0, // Wait for load_start pulse
+             S_LOAD       = 3'd1, // Issue burst-read (assert ARVALID, RREADY)
+             S_WAIT_BURST = 3'd2, // Capture burst-read data
+             S_BURST = 3'd3,
+             S_READY      = 3'd4, // Matrix loaded; idle waiting for extraction trigger
+             S_EXTRACT    = 3'd5, // Combinational extraction in one cycle
+             S_DONE       = 3'd6; // Extraction done, output valid result
+
   reg [2:0] state;
-  reg [3:0] current_i;      // Current row being processed
-  reg [63:0] result_reg;    // Assembled output word
-  
-  // Compute valid row range based on cycle.
-  reg [3:0] start_i, end_i;
-  always @(*) begin
-      if (cycle <= 4'd7) begin
-          start_i = 4'd0;
-          end_i   = cycle;
-      end else begin
-          start_i = cycle - 4'd7;
-          end_i   = 4'd7;
-      end
-  end
 
-  // Compute column index j = cycle - current_i for the current read.
-  reg [3:0] j_val;
-  always @(*) begin
-      j_val = cycle - current_i;
-  end
+  //-------------------------------------------------------------------------
+  // Burst-Read Buffering for 8x8 Matrix A
+  // The matrix is 8 rows × 8 bytes = 64 bytes = 16 32-bit words.
+  // We capture these 16 words (in burst_data) and reassemble them into a 512-bit
+  // register (a_matrix_reg), where each 64-bit slice is one row.
+  //-------------------------------------------------------------------------
+  reg [3:0] burst_cnt;
+  reg [31:0] burst_data [0:15];
+  reg [511:0] a_matrix_reg;
+  reg [3:0]   cycle;
+  reg [3:0]   valid_cycle_reg;
+  reg matrix_loaded;
+  assign input_loaded = matrix_loaded;
 
-  // Compute the memory word address for element A[current_i][j]:
-  // Each row occupies 8 bytes (2 words of 4 bytes each). If j < 4, the element is in word0; if j >= 4, in word1.
-  wire [11:0] computed_addr = BASE_ADDR + (current_i << 3) + ((j_val >= 4'd4) ? 12'd4 : 12'd0);
+  //-------------------------------------------------------------------------
+  // Diagonal Extraction (combinational mux)
+  // For each row i (0 to 7) if valid then select byte at column j = cycle – i.
+  // A row is valid if:
+  //   - when cycle <= 7: i <= cycle
+  //   - when cycle > 7: i >= (cycle – 7)
+  // Otherwise, output 0.
+  //-------------------------------------------------------------------------
+  wire [7:0] diag_byte [0:7];
+  genvar i;
+  generate
+    for (i = 0; i < 8; i = i + 1) begin: diag_extract
+      wire valid_row;
+      assign valid_row = ((cycle <= 4'd7 && i <= cycle) ||
+                          (cycle > 4'd7 && i >= (cycle - 4'd7))) &&
+                         ((cycle - i) < 4'd8);
+      assign diag_byte[i] = valid_row ? a_matrix_reg[i*64 + ((cycle - i)*8) +: 8] : 8'd0;
+    end
+  endgenerate
 
-  // Compute byte offset within the 32-bit word.
-  reg [1:0] byte_offset;
-  always @(*) begin
-      if (j_val >= 4'd4)
-          byte_offset = j_val - 4'd4;
-      else
-          byte_offset = j_val[1:0];
-  end
+  wire [63:0] comb_extraction;
+  assign comb_extraction = {diag_byte[7], diag_byte[6], diag_byte[5], diag_byte[4],
+                            diag_byte[3], diag_byte[2], diag_byte[1], diag_byte[0]};
+  assign valid_cycle = valid_cycle_reg;
 
-  // Mux to extract the correct 8-bit element from fsm_read_data.
-  reg [7:0] extracted_byte;
-  always @(*) begin
-      case (byte_offset)
-          2'd0: extracted_byte = fsm_read_data[7:0];
-          2'd1: extracted_byte = fsm_read_data[15:8];
-          2'd2: extracted_byte = fsm_read_data[23:16];
-          2'd3: extracted_byte = fsm_read_data[31:24];
-          default: extracted_byte = 8'd0;
-      endcase
-  end
-
-  // Top-level extraction FSM.
+  //-------------------------------------------------------------------------
+  // Main FSM
+  //-------------------------------------------------------------------------
+  integer j;
   always @(posedge clk) begin
-      if (rst) begin
-          state         <= T_IDLE;
-          result_reg    <= 64'd0;
-          a_flat_out    <= 64'd0;
-          valid         <= 1'b0;
-          current_i     <= 4'd0;
-          axi_start     <= 1'b0;
-          axi_read_addr <= 12'd0;
-      end else begin
-          case (state)
-              T_IDLE: begin
-                  valid <= 1'b0;
-                  result_reg <= 64'd0;
-                  if (start) begin
-                      // For cycles > 7, start from row = c - 7; otherwise, start at 0.
-                      if (cycle <= 4'd7)
-                          current_i <= 4'd0;
-                      else
-                          current_i <= cycle - 4'd7;
-                    //   $display("[Extractor] Cycle=%0d, start_i=%0d, end_i=%0d", cycle, (cycle<=7?0:cycle-7), (cycle<=7?cycle:7));
-                      state <= T_READ;
-                  end
-              end
+    if (rst) begin
+      state         <= S_WAIT_LOAD;
+      burst_cnt     <= 4'd0;
+      matrix_loaded <= 1'b0;
+      m_axi_araddr  <= 0;
+      m_axi_arlen   <= 8'd0;  // 16-word burst (arlen = burst length - 1)
+      m_axi_arsize  <= 3'b0; // 32-bit transfers
+      m_axi_arburst <= 2'b0;  // INCR burst
+      m_axi_arcache <= 4'd0;
+      m_axi_arlock  <= 1'b0;
+      m_axi_arprot  <= 3'd0;
+      m_axi_arvalid <= 1'b0;
+      m_axi_rready  <= 1'b0;
+      a_flat_out    <= 64'd0;
+      cycle         <= 4'b0;
+    end else if (extract_reset) begin
+      cycle         <= 3'b0;
+      state <= S_READY;
+    end else begin
+      case (state)
+        //---------------------------------------------------------------
+        // S_WAIT_LOAD: Wait for the load_start pulse to begin matrix load.
+        //---------------------------------------------------------------
+        S_WAIT_LOAD: begin
+          if (load_start) begin
+            matrix_loaded <= 1'b0;
+            burst_cnt <= 4'd0;
+            m_axi_araddr  <= BASE_ADDR;
+            m_axi_arlen   <= 8'd15;
+            m_axi_arsize  <= 3'b010;
+            m_axi_arburst <= 2'b01;
+            m_axi_arvalid <= 1'b1;
+            m_axi_rready  <= 1'b1;
+            state <= S_LOAD;
+          end
+        end
 
-              T_READ: begin
-                  // Issue read for element A[current_i][cycle - current_i]
-                  axi_read_addr <= computed_addr;
-                  axi_start <= 1'b1;
-                //   $display("[Extractor] T_READ: current_i=%0d, j_val=%0d, computed_addr=%0h", current_i, j_val, computed_addr);
-                  state <= T_WAIT;
-              end
+        //---------------------------------------------------------------
+        // S_LOAD: Ensure the burst address is accepted.
+        //---------------------------------------------------------------
+        S_LOAD: begin
+          
+          if (m_axi_arready)
+            state <= S_WAIT_BURST;
+            m_axi_arvalid <= 1'b0;
+            
+        end
 
-              T_WAIT: begin
-                  axi_start <= 1'b0;
-                  if (fsm_valid) begin
-                    //   $display("[Extractor] T_WAIT: fsm_valid asserted, extracted_byte=0x%02h", extracted_byte);
-                      state <= T_STORE;
-                  end
-              end
+        //---------------------------------------------------------------
+        // S_WAIT_BURST: Capture burst-read data and reassemble into a_matrix_reg.
+        //---------------------------------------------------------------
+        S_WAIT_BURST: begin
+          if (m_axi_rvalid) begin
+            burst_data[burst_cnt] <= m_axi_rdata;
+            burst_cnt <= burst_cnt + 1;
+            if (m_axi_rlast) begin
+              m_axi_rready <= 1'b0;
+              state <= S_BURST;
+            end
+          end
+        end
 
-              T_STORE: begin
-                  // Store the extracted byte into the result at the byte lane corresponding to current_i.
-                  result_reg[(current_i*8) +: 8] <= extracted_byte;
-                //   $display("[Extractor] T_STORE: Stored byte=0x%02h at row %0d", extracted_byte, current_i);
-                  if (current_i < end_i) begin
-                      current_i <= current_i + 1;
-                      state <= T_READ;
-                  end else begin
-                      state <= T_DONE;
-                  end
-              end
+        S_BURST: begin
 
-              T_DONE: begin
-                  a_flat_out <= result_reg;
-                  valid <= 1'b1;
-                  $display("[Extractor] T_DONE: Final extracted word=0x%016h", result_reg);
-                  if (!start)
-                      state <= T_IDLE;
-              end
+          for (j = 0; j < 8; j = j + 1) begin
+            // Each row i is {word1, word0} from burst_data[2*i+1] and burst_data[2*i]
+            a_matrix_reg[ 63:  0] <= { burst_data[1],  burst_data[0]  };
+            a_matrix_reg[127: 64] <= { burst_data[3],  burst_data[2]  };
+            a_matrix_reg[191:128] <= { burst_data[5],  burst_data[4]  };
+            a_matrix_reg[255:192] <= { burst_data[7],  burst_data[6]  };
+            a_matrix_reg[319:256] <= { burst_data[9],  burst_data[8]  };
+            a_matrix_reg[383:320] <= { burst_data[11], burst_data[10] };
+            a_matrix_reg[447:384] <= { burst_data[13], burst_data[12] };
+            a_matrix_reg[511:448] <= { burst_data[15], burst_data[14] };
+          end
+          matrix_loaded <= 1'b1;
+          state <= S_READY;
+          
+        end
 
-              default: state <= T_IDLE;
-          endcase
-      end
+        //---------------------------------------------------------------
+        // S_READY: Matrix loaded; wait for extraction trigger (start).
+        //---------------------------------------------------------------
+        S_READY: begin
+          if (start && matrix_loaded)
+            state <= S_EXTRACT;
+        end
+
+        //---------------------------------------------------------------
+        // S_EXTRACT: In one cycle, mux out the diagonal extraction.
+        //---------------------------------------------------------------
+        S_EXTRACT: begin
+          a_flat_out <= comb_extraction;
+          state <= S_READY;
+          valid_cycle_reg <= cycle;
+          if (cycle < 15) begin
+            cycle += 3'b001;
+          end else begin
+            cycle = 0;
+          end
+        end
+
+        //---------------------------------------------------------------
+        // S_DONE: Wait for start to deassert before returning to S_READY.
+        //---------------------------------------------------------------
+        S_DONE: begin
+          if (!start) begin
+            state <= S_READY;
+          end
+        end
+
+        default: state <= S_WAIT_LOAD;
+      endcase
+    end
   end
 
 endmodule

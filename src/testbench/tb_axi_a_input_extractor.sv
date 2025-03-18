@@ -1,26 +1,29 @@
 `timescale 1ns/1ps
 module tb_extractor_integration;
 
-  //===========================================================================
-  // Clock & Reset
-  //===========================================================================
+ // Clock and reset signals.
   reg sys_clock;
   reg reset_rtl;
+  parameter AXI_ADDR_WIDTH = 12;
+  parameter BASE_ADDR_A = 12'h000;
   
+  // Generate a 100 MHz clock.
   initial begin
       sys_clock = 0;
-      forever #5 sys_clock = ~sys_clock; // 100 MHz clock
+      forever #5 sys_clock = ~sys_clock;
   end
-
+  
+  // Reset generation.
   initial begin
       reset_rtl = 1;
       #20;
       reset_rtl = 0;
   end
-
-  //===========================================================================
-  // S_AXI_0 Interface (for programming memory)
-  //===========================================================================
+  
+  //-------------------------------------------------------------------------
+  // Signals for Memory Block Wrapper (S_AXI_0 for programming, S_AXI_1 for extractor)
+  //-------------------------------------------------------------------------
+  // S_AXI_0 signals (for programming the memory)
   reg  [11:0] S_AXI_0_awaddr;
   reg  [1:0]  S_AXI_0_awburst;
   reg  [3:0]  S_AXI_0_awcache;
@@ -38,7 +41,6 @@ module tb_extractor_integration;
   wire        S_AXI_0_wready;
   reg  [3:0]  S_AXI_0_wstrb;
   reg         S_AXI_0_wvalid;
-
   reg  [11:0] S_AXI_0_araddr;
   reg  [1:0]  S_AXI_0_arburst;
   reg  [3:0]  S_AXI_0_arcache;
@@ -53,63 +55,62 @@ module tb_extractor_integration;
   reg         S_AXI_0_rready;
   wire [1:0]  S_AXI_0_rresp;
   wire        S_AXI_0_rvalid;
-
-  //===========================================================================
-  // S_AXI_1 Interface (used by the extractor)
-  //===========================================================================
-  // The memory_block_wrapper provides both S_AXI_0 (for programming)
-  // and S_AXI_1 (for extractor read transactions). We assume that the 
-  // S_AXI_1 side of the memory block wrapper is fully AXI compliant.
-  reg  [11:0] S_AXI_1_awaddr;
-  reg  [1:0]  S_AXI_1_awburst;
-  reg  [3:0]  S_AXI_1_awcache;
-  reg  [7:0]  S_AXI_1_awlen;
-  reg         S_AXI_1_awlock;
-  reg  [2:0]  S_AXI_1_awprot;
-  wire        S_AXI_1_awready;
-  reg  [2:0]  S_AXI_1_awsize;
-  reg         S_AXI_1_awvalid;
-  reg         S_AXI_1_bready;
-  wire [1:0]  S_AXI_1_bresp;
-  wire        S_AXI_1_bvalid;
-  reg  [31:0] S_AXI_1_wdata;
-  reg         S_AXI_1_wlast;
-  wire        S_AXI_1_wready;
-  reg  [3:0]  S_AXI_1_wstrb;
-  reg         S_AXI_1_wvalid;
-
-  reg  [11:0] S_AXI_1_araddr;
-  reg  [1:0]  S_AXI_1_arburst;
-  reg  [3:0]  S_AXI_1_arcache;
-  reg  [7:0]  S_AXI_1_arlen;
-  reg         S_AXI_1_arlock;
-  reg  [2:0]  S_AXI_1_arprot;
-  wire        S_AXI_1_arready;
-  reg  [2:0]  S_AXI_1_arsize;
-  reg         S_AXI_1_arvalid;
-  wire [31:0] S_AXI_1_rdata;
-  wire        S_AXI_1_rlast;
-  reg         S_AXI_1_rready;
-  wire [1:0]  S_AXI_1_rresp;
-  wire        S_AXI_1_rvalid;
-
-  //===========================================================================
-  // Extractor Control Signals
-  //===========================================================================
-  reg         extractor_start;
-  reg  [3:0]  extractor_cycle;
-  wire [63:0] extracted_flat;
-  wire        extractor_valid;
-
-  //===========================================================================
-  // Instantiate Memory Block Wrapper
-  //===========================================================================
-  // This is your final memory block. It should implement the AXI interfaces 
-  // for both S_AXI_0 (programming) and S_AXI_1 (reads for the extractor).
-  memory_block_wrapper mem_dut (
-    .sys_clock(sys_clock),
-    .reset_rtl(reset_rtl),
-    // S_AXI_0 connections
+  
+  // S_AXI_1 signals (used by the extractor)
+  reg [11:0] S_AXI_1_araddr;
+  reg [1:0]  S_AXI_1_arburst;
+  reg [3:0]  S_AXI_1_arcache;
+  reg [7:0]  S_AXI_1_arlen;
+  reg        S_AXI_1_arlock;
+  reg [2:0]  S_AXI_1_arprot;
+  reg        S_AXI_1_arready;
+  reg [2:0]  S_AXI_1_arsize;
+  reg        S_AXI_1_arvalid;
+  reg [11:0] S_AXI_1_awaddr;
+  reg [1:0]  S_AXI_1_awburst;
+  reg [3:0]  S_AXI_1_awcache;
+  reg [7:0]  S_AXI_1_awlen;
+  reg        S_AXI_1_awlock;
+  reg [2:0]  S_AXI_1_awprot;
+  reg        S_AXI_1_awready;
+  reg [2:0]  S_AXI_1_awsize;
+  reg        S_AXI_1_awvalid;
+  reg        S_AXI_1_bready;
+  reg [1:0]  S_AXI_1_bresp;
+  reg        S_AXI_1_bvalid;
+  reg [31:0] S_AXI_1_rdata;
+  reg        S_AXI_1_rlast;
+  reg        S_AXI_1_rready;
+  reg [1:0]  S_AXI_1_rresp;
+  reg        S_AXI_1_rvalid;
+  reg [31:0] S_AXI_1_wdata;
+  reg        S_AXI_1_wlast;
+  reg        S_AXI_1_wready;
+  reg [3:0]  S_AXI_1_wstrb;
+  reg        S_AXI_1_wvalid;
+  
+  //-------------------------------------------------------------------------
+  // Declare testbench helper variables at module scope.
+  //-------------------------------------------------------------------------
+  integer t, i_idx;
+  reg [63:0] expected;
+  reg [7:0] expected_byte;
+  reg error_flag;
+  reg matrix_loaded;
+  
+  //-------------------------------------------------------------------------
+  // Instantiate the memory block wrapper (your provided module)
+  //-------------------------------------------------------------------------
+  memory_block_wrapper memory_block_i (
+    .S_AXI_0_araddr(S_AXI_0_araddr),
+    .S_AXI_0_arburst(S_AXI_0_arburst),
+    .S_AXI_0_arcache(S_AXI_0_arcache),
+    .S_AXI_0_arlen(S_AXI_0_arlen),
+    .S_AXI_0_arlock(S_AXI_0_arlock),
+    .S_AXI_0_arprot(S_AXI_0_arprot),
+    .S_AXI_0_arready(S_AXI_0_arready),
+    .S_AXI_0_arsize(S_AXI_0_arsize),
+    .S_AXI_0_arvalid(S_AXI_0_arvalid),
     .S_AXI_0_awaddr(S_AXI_0_awaddr),
     .S_AXI_0_awburst(S_AXI_0_awburst),
     .S_AXI_0_awcache(S_AXI_0_awcache),
@@ -122,26 +123,25 @@ module tb_extractor_integration;
     .S_AXI_0_bready(S_AXI_0_bready),
     .S_AXI_0_bresp(S_AXI_0_bresp),
     .S_AXI_0_bvalid(S_AXI_0_bvalid),
-    .S_AXI_0_wdata(S_AXI_0_wdata),
-    .S_AXI_0_wlast(S_AXI_0_wlast),
-    .S_AXI_0_wready(S_AXI_0_wready),
-    .S_AXI_0_wstrb(S_AXI_0_wstrb),
-    .S_AXI_0_wvalid(S_AXI_0_wvalid),
-    .S_AXI_0_araddr(S_AXI_0_araddr),
-    .S_AXI_0_arburst(S_AXI_0_arburst),
-    .S_AXI_0_arcache(S_AXI_0_arcache),
-    .S_AXI_0_arlen(S_AXI_0_arlen),
-    .S_AXI_0_arlock(S_AXI_0_arlock),
-    .S_AXI_0_arprot(S_AXI_0_arprot),
-    .S_AXI_0_arready(S_AXI_0_arready),
-    .S_AXI_0_arsize(S_AXI_0_arsize),
-    .S_AXI_0_arvalid(S_AXI_0_arvalid),
     .S_AXI_0_rdata(S_AXI_0_rdata),
     .S_AXI_0_rlast(S_AXI_0_rlast),
     .S_AXI_0_rready(S_AXI_0_rready),
     .S_AXI_0_rresp(S_AXI_0_rresp),
     .S_AXI_0_rvalid(S_AXI_0_rvalid),
-    // S_AXI_1 connections (for extractor read transactions)
+    .S_AXI_0_wdata(S_AXI_0_wdata),
+    .S_AXI_0_wlast(S_AXI_0_wlast),
+    .S_AXI_0_wready(S_AXI_0_wready),
+    .S_AXI_0_wstrb(S_AXI_0_wstrb),
+    .S_AXI_0_wvalid(S_AXI_0_wvalid),
+    .S_AXI_1_araddr(S_AXI_1_araddr),
+    .S_AXI_1_arburst(S_AXI_1_arburst),
+    .S_AXI_1_arcache(S_AXI_1_arcache),
+    .S_AXI_1_arlen(S_AXI_1_arlen),
+    .S_AXI_1_arlock(S_AXI_1_arlock),
+    .S_AXI_1_arprot(S_AXI_1_arprot),
+    .S_AXI_1_arready(S_AXI_1_arready),
+    .S_AXI_1_arsize(S_AXI_1_arsize),
+    .S_AXI_1_arvalid(S_AXI_1_arvalid),
     .S_AXI_1_awaddr(S_AXI_1_awaddr),
     .S_AXI_1_awburst(S_AXI_1_awburst),
     .S_AXI_1_awcache(S_AXI_1_awcache),
@@ -154,148 +154,101 @@ module tb_extractor_integration;
     .S_AXI_1_bready(S_AXI_1_bready),
     .S_AXI_1_bresp(S_AXI_1_bresp),
     .S_AXI_1_bvalid(S_AXI_1_bvalid),
+    .S_AXI_1_rdata(S_AXI_1_rdata),
+    .S_AXI_1_rlast(S_AXI_1_rlast),
+    .S_AXI_1_rready(S_AXI_1_rready),
+    .S_AXI_1_rresp(S_AXI_1_rresp),
+    .S_AXI_1_rvalid(S_AXI_1_rvalid),
     .S_AXI_1_wdata(S_AXI_1_wdata),
     .S_AXI_1_wlast(S_AXI_1_wlast),
     .S_AXI_1_wready(S_AXI_1_wready),
     .S_AXI_1_wstrb(S_AXI_1_wstrb),
     .S_AXI_1_wvalid(S_AXI_1_wvalid),
-    .S_AXI_1_araddr(S_AXI_1_araddr),
-    .S_AXI_1_arburst(S_AXI_1_arburst),
-    .S_AXI_1_arcache(S_AXI_1_arcache),
-    .S_AXI_1_arlen(S_AXI_1_arlen),
-    .S_AXI_1_arlock(S_AXI_1_arlock),
-    .S_AXI_1_arprot(S_AXI_1_arprot),
-    .S_AXI_1_arready(S_AXI_1_arready),
-    .S_AXI_1_arsize(S_AXI_1_arsize),
-    .S_AXI_1_arvalid(S_AXI_1_arvalid),
-    .S_AXI_1_rdata(S_AXI_1_rdata),
-    .S_AXI_1_rlast(S_AXI_1_rlast),
-    .S_AXI_1_rready(S_AXI_1_rready),
-    .S_AXI_1_rresp(S_AXI_1_rresp),
-    .S_AXI_1_rvalid(S_AXI_1_rvalid)
+    .reset_rtl(reset_rtl),
+    .sys_clock(sys_clock)
   );
-
-  //===========================================================================
-  // Instantiate A-Input Extractor Top Module
-  //===========================================================================
-  axi_a_input_extractor_top extractor (
+  
+  //-------------------------------------------------------------------------
+  // Instantiate the extractor module.
+  //-------------------------------------------------------------------------
+  // Control signals for the extractor.
+  reg load_start_extr;
+  reg start_extr;
+  reg [3:0] cycle_extr;
+  wire [63:0] a_flat_out_extr;
+  wire valid_extr;
+  
+  axi_a_input_extractor_top extractor_i (
     .clk(sys_clock),
     .rst(reset_rtl),
-    .start(extractor_start),
-    .cycle(extractor_cycle),
-    .a_flat_out(extracted_flat),
-    .valid(extractor_valid),
-    // Connect the AXI read channel to the S_AXI_1 interface.
+    .load_start(load_start_extr),
+    .start(start_extr),
+    // .cycle(cycle_extr),
+    .a_flat_out(a_flat_out_extr),
+    // .valid(valid_extr),
+    .input_loaded(matrix_loaded),
+    // Connect to S_AXI_1 interface from the memory block.
     .m_axi_araddr(S_AXI_1_araddr),
-    .m_axi_arsize(S_AXI_1_arsize ),
+    .m_axi_arsize(S_AXI_1_arsize),
     .m_axi_arvalid(S_AXI_1_arvalid),
     .m_axi_arburst(S_AXI_1_arburst),
     .m_axi_arcache(S_AXI_1_arcache),
-    .m_axi_arlen(S_AXI_1_arlen  ),
-    .m_axi_arlock(S_AXI_1_arlock ),
-    .m_axi_arprot(S_AXI_1_arprot ),
+    .m_axi_arlen(S_AXI_1_arlen),
+    .m_axi_arlock(S_AXI_1_arlock),
+    .m_axi_arprot(S_AXI_1_arprot),
     .m_axi_arready(S_AXI_1_arready),
     .m_axi_rdata(S_AXI_1_rdata),
     .m_axi_rvalid(S_AXI_1_rvalid),
-    .m_axi_rready(S_AXI_1_rready),
-    .m_axi_rlast(S_AXI_1_rlast)
+    .m_axi_rlast(S_AXI_1_rlast),
+    .m_axi_rready(S_AXI_1_rready)
   );
-
-  //========================================================================
-// S_AXI_1 Master Signals for Validation (Testbench-driven)
-//========================================================================
-reg  [11:0] S_AXI_1_araddr_tb;
-reg         S_AXI_1_arvalid_tb;
-reg  [2:0]  S_AXI_1_arsize_tb;
-reg         S_AXI_1_rready_tb;
-
-// Drive the S_AXI_1 master signals from the testbench.
-// (Assuming that the memory_block_wrapper’s S_AXI_1 port is not driven
-//  by another module during validation.)
-assign S_AXI_1_araddr   = S_AXI_1_araddr_tb;
-assign S_AXI_1_arsize   = S_AXI_1_arsize_tb;
-assign S_AXI_1_arvalid  = S_AXI_1_arvalid_tb;
-assign S_AXI_1_rready   = S_AXI_1_rready_tb;
-
-//========================================================================
-// Task: axi4_read_S1
-//
-// Performs a single AXI read transaction on the S_AXI_1 interface.
-//========================================================================
-task axi4_read_S1(input [11:0] addr, output [31:0] data);
-  integer timeout_counter;
-    begin
-        timeout_counter = 10;
-        while (S_AXI_1_arready !== 0 && timeout_counter > 0) begin
-           @(posedge sys_clock);
-           timeout_counter = timeout_counter - 1;
-        end
-        S_AXI_1_araddr  = addr;
-        S_AXI_1_arlen   = 8'h00;      // Single transfer
-        S_AXI_1_arsize  = 3'b010;
-        S_AXI_1_arburst = 2'b00;
-        S_AXI_1_arlock  = 0;
-        S_AXI_1_arvalid = 1;
-        S_AXI_1_rready  = 1;
-        @(posedge sys_clock);
-        S_AXI_1_arvalid = 0;
-        timeout_counter = 10;
-        while (S_AXI_1_rvalid !== 1 && timeout_counter > 0) begin
-           @(posedge sys_clock);
-           timeout_counter = timeout_counter - 1;
-        end
-        data = S_AXI_1_rdata;
-        S_AXI_1_rready = 0;
-        $display("[TB] S_AXI_0 Read: Addr = 0x%03h, Data = 0x%08h", addr, data);
-        @(posedge sys_clock);
-    end
-endtask
-
-//========================================================================
-// Additional Validation for S_AXI_1 Reads
-//========================================================================
-integer row;
-reg [31:0] word_data_s1;
-reg [31:0] expected_word;
-
-  //===========================================================================
-  // AXI4 Write and Read Tasks for S_AXI_0 (Memory Programming)
-  //===========================================================================
-  task axi4_write_S0(input [11:0] addr, input [31:0] data);
+  
+  task axi4_single_write(
+        input [AXI_ADDR_WIDTH-1:0] addr,
+        input [31:0]               data
+    );
     integer timeout_counter;
-    begin
-      @(posedge sys_clock);
-      S_AXI_0_awaddr  = addr;
-      S_AXI_0_awlen   = 8'h00;      // Single transfer
-      S_AXI_0_awsize  = 3'b010;     // 32-bit word
-      S_AXI_0_awburst = 2'b01;      // INCR mode
-      S_AXI_0_awvalid = 1;
-      @(posedge sys_clock);
-      S_AXI_0_awvalid = 0;
-      S_AXI_0_wdata   = data;
-      S_AXI_0_wstrb   = 4'b1111;
-      S_AXI_0_wvalid  = 1;
-      S_AXI_0_wlast   = 1;
-      S_AXI_0_bready  = 1;
-      @(posedge sys_clock);
-      S_AXI_0_wvalid  = 0;
-      S_AXI_0_wlast   = 0;
-      S_AXI_0_bready  = 1;
-      timeout_counter = 10;
-      while (S_AXI_0_bvalid !== 1 && timeout_counter > 0) begin
-         @(posedge sys_clock);
-         timeout_counter = timeout_counter - 1;
-      end
-      S_AXI_0_bready = 0;
-      $display("[TB] S_AXI_0 Write: Addr = 0x%03h, Data = 0x%08h", addr, data);
-      @(posedge sys_clock);
-    end
-  endtask
+        begin
+            // AW
+             @(posedge sys_clock);
+            S_AXI_0_awaddr  = addr;
+            S_AXI_0_awlen   = 8'h00;      // Single transfer
+            S_AXI_0_awsize  = 3'b010;     // 32-bit word
+            S_AXI_0_awburst = 2'b01;      // INCR mode
+            S_AXI_0_awvalid = 1;
+            @(posedge sys_clock);
+            S_AXI_0_awvalid = 0;
+            S_AXI_0_wdata   = data;
+            S_AXI_0_wstrb   = 4'b1111;
+            S_AXI_0_wvalid  = 1;
+            S_AXI_0_wlast   = 1;
+            S_AXI_0_bready  = 1;
+            @(posedge sys_clock);
+            S_AXI_0_wvalid  = 0;
+            S_AXI_0_wlast   = 0;
+            S_AXI_0_bready  = 1;
+            timeout_counter = 10;
+            while (S_AXI_0_bvalid !== 1 && timeout_counter > 0) begin
+                @(posedge sys_clock);
+                timeout_counter = timeout_counter - 1;
+            end
+            S_AXI_0_bready = 0;
 
-  task axi4_read_S0(input [11:0] addr, output [31:0] data);
+            $display("[TB:AXI] Wrote 0x%08h to 0x%03h at time %t", data, addr, $time);
+        end
+    endtask
+
+    // -------------------------------------------------------------------------
+    // AXI4 Single-Read Task (Simplified)
+    // -------------------------------------------------------------------------
+    task axi4_single_read(
+        input  [AXI_ADDR_WIDTH-1:0] addr,
+        output [31:0]               data
+    );
     integer timeout_counter;
-    begin
-      @(posedge sys_clock);
+        begin
+            // AR
+            @(posedge sys_clock);
       timeout_counter = 10;
       while (S_AXI_0_arready !== 0 && timeout_counter > 0) begin
          @(posedge sys_clock);
@@ -317,295 +270,186 @@ reg [31:0] expected_word;
       end
       data = S_AXI_0_rdata;
       S_AXI_0_rready = 0;
-      $display("[TB] S_AXI_0 Read: Addr = 0x%03h, Data = 0x%08h", addr, data);
-    end
-  endtask
 
-  //===========================================================================
-  // Test Sequence
-  //===========================================================================
-  integer row, c, timeout, row;
-  reg [31:0] word_data;
-  reg [31:0] expected_word;
-  reg [63:0] expected_extraction;
-  reg [7:0]  expected_byte;
-  reg [7:0] byte0, byte1, byte2, byte3;
-    task reset_signals();
-        S_AXI_0_awaddr   = 0;
-    S_AXI_0_awburst  = 0;
-    S_AXI_0_awcache  = 0;
-    S_AXI_0_awlen    = 0;
-    S_AXI_0_awlock   = 0;
-    S_AXI_0_awprot   = 0;
-    S_AXI_0_awsize   = 0;
-    S_AXI_0_awvalid  = 0;
-    S_AXI_0_bready   = 0;
-    S_AXI_0_wdata    = 0;
-    S_AXI_0_wlast    = 0;
-    S_AXI_0_wstrb    = 0;
-    S_AXI_0_wvalid   = 0;
-    S_AXI_0_araddr   = 0;
-    S_AXI_0_arburst  = 0;
-    S_AXI_0_arcache  = 0;
-    S_AXI_0_arlen    = 0;
-    S_AXI_0_arlock   = 0;
-    S_AXI_0_arprot   = 0;
-    S_AXI_0_arsize   = 0;
-    S_AXI_0_arvalid  = 0;
-    S_AXI_0_rready   = 0;
-
-    S_AXI_1_awaddr   = 0;
-    S_AXI_1_awburst  = 0;
-    S_AXI_1_awcache  = 0;
-    S_AXI_1_awlen    = 0;
-    S_AXI_1_awlock   = 0;
-    S_AXI_1_awprot   = 0;
-    S_AXI_1_awsize   = 0;
-    S_AXI_1_awvalid  = 0;
-    S_AXI_1_bready   = 0;
-    S_AXI_1_wdata    = 0;
-    S_AXI_1_wlast    = 0;
-    S_AXI_1_wstrb    = 0;
-    S_AXI_1_wvalid   = 0;
-    S_AXI_1_araddr   = 0;
-    S_AXI_1_arburst  = 0;
-    S_AXI_1_arcache  = 0;
-    S_AXI_1_arlen    = 0;
-    S_AXI_1_arlock   = 0;
-    S_AXI_1_arprot   = 0;
-    S_AXI_1_arsize   = 0;
-    S_AXI_1_arvalid  = 0;
-    S_AXI_1_rready   = 0;
+            $display("[TB:AXI] Read  0x%08h from 0x%03h at time %t", data, addr, $time);
+        end
     endtask
+
+    reg [7:0] byte0, byte1, byte2, byte3;
+
+    // -------------------------------------------------------------------------
+    // Utility: Write 8 words (2 for each row) for an 8x8 matrix
+    // (Adapt to your memory layout)
+    // For demonstration, we store row 0..7 in consecutive addresses
+    // -------------------------------------------------------------------------
+    task write_matrix_A;
+        integer row, col;
+        reg [31:0] word;
+        begin
+            $display("[TB] Writing test matrix A into memory...");
+            // Example pattern: For each row, store 2 words (columns 0..3, then 4..7).
+            // The user can adapt if the memory layout differs.
+            for (row = 0; row < 8; row++) begin
+                // Word0 for row
+                byte0 = row*8 + 1; // A[row][0]
+                byte1 = row*8 + 2; // A[row][1]
+                byte2 = row*8 + 3; // A[row][2]
+                byte3 = row*8 + 4; // A[row][3]
+                word = {byte3, byte2, byte1, byte0}; 
+                axi4_single_write(BASE_ADDR_A + row*8 + 0, word);
+
+                // Word1 for row
+                byte0 = row*8 + 5; // A[row][4]
+                byte1 = row*8 + 6; // A[row][5]
+                byte2 = row*8 + 7; // A[row][6]
+                byte3 = row*8 + 8; // A[row][7]
+                word = {byte3, byte2, byte1, byte0};
+                axi4_single_write(BASE_ADDR_A + row*8 + 4, word);
+            end
+        end
+    endtask
+
+    task verify_matrix_A;
+        integer row;
+        reg [31:0] read_back, expected0, expected1;
+        begin
+            $display("[TB] Verifying test matrix A in memory...");
+            for (row = 0; row < 8; row++) begin
+                byte0 = row*8 + 1; // A[row][0]
+                byte1 = row*8 + 2; // A[row][1]
+                byte2 = row*8 + 3; // A[row][2]
+                byte3 = row*8 + 4; // A[row][3]
+                expected0 = {byte3, byte2, byte1, byte0}; 
+                axi4_single_read(BASE_ADDR_A + row*8, read_back);
+                if (read_back !== expected0) begin
+                    $display("[ERROR] A row=%0d word0 mismatch. Read=0x%08h, Exp=0x%08h, Addr=0x%03h", 
+                             row, read_back, expected0, BASE_ADDR_A + row*8 + 0);
+                    $stop;
+                end
+
+                // Word1
+                byte0 = row*8 + 5; // A[row][4]
+                byte1 = row*8 + 6; // A[row][5]
+                byte2 = row*8 + 7; // A[row][6]
+                byte3 = row*8 + 8; // A[row][7]
+                expected1 = {byte3, byte2, byte1, byte0};
+                axi4_single_read(BASE_ADDR_A + row*8 + 4, read_back);
+                if (read_back !== expected1) begin
+                    $display("[ERROR] A row=%0d word1 mismatch. Read=0x%08h, Exp=0x%08h", 
+                             row, read_back, expected1);
+                    $stop;
+                end
+            end
+            $display("[TB] A matrix verification PASSED!");
+        end
+    endtask
+  
+  //-------------------------------------------------------------------------
+  // Program the Memory Block with the 8x8 matrix A.
+  // A[i][j] = i*8 + j + 1; each row is stored as two words:
+  //   word0 = { A[i][3], A[i][2], A[i][1], A[i][0] }
+  //   word1 = { A[i][7], A[i][6], A[i][5], A[i][4] }
+  //-------------------------------------------------------------------------
+  integer row;
+  reg [31:0] word_data;
+  integer wait_cycles;
   initial begin
-    // Initialize S_AXI_0 signals
-    S_AXI_0_awaddr   = 0;
-    S_AXI_0_awburst  = 0;
-    S_AXI_0_awcache  = 0;
-    S_AXI_0_awlen    = 0;
-    S_AXI_0_awlock   = 0;
-    S_AXI_0_awprot   = 0;
-    S_AXI_0_awsize   = 0;
-    S_AXI_0_awvalid  = 0;
-    S_AXI_0_bready   = 0;
-    S_AXI_0_wdata    = 0;
-    S_AXI_0_wlast    = 0;
-    S_AXI_0_wstrb    = 0;
-    S_AXI_0_wvalid   = 0;
-    S_AXI_0_araddr   = 0;
-    S_AXI_0_arburst  = 0;
-    S_AXI_0_arcache  = 0;
-    S_AXI_0_arlen    = 0;
-    S_AXI_0_arlock   = 0;
-    S_AXI_0_arprot   = 0;
-    S_AXI_0_arsize   = 0;
-    S_AXI_0_arvalid  = 0;
-    S_AXI_0_rready   = 0;
+    // Initialize S_AXI_0 interface signals.
+    S_AXI_0_awaddr = 0; S_AXI_0_awburst = 0; S_AXI_0_arcache = 0;
+    S_AXI_0_awlen = 0; S_AXI_0_awlock = 0; S_AXI_0_awprot = 0;
+    S_AXI_0_awsize = 0; S_AXI_0_awvalid = 0; S_AXI_0_bready = 0;
+    S_AXI_0_wdata = 0; S_AXI_0_wlast = 0; S_AXI_0_wstrb = 0; S_AXI_0_wvalid = 0;
+    S_AXI_0_araddr = 0; S_AXI_0_arburst = 0; S_AXI_0_arcache = 0;
+    S_AXI_0_arlen = 0; S_AXI_0_arlock = 0; S_AXI_0_arprot = 0;
+    S_AXI_0_arsize = 0; S_AXI_0_arvalid = 0; S_AXI_0_rready = 0;
 
-    S_AXI_1_awaddr   = 0;
-    S_AXI_1_awburst  = 0;
-    S_AXI_1_awcache  = 0;
-    S_AXI_1_awlen    = 0;
-    S_AXI_1_awlock   = 0;
-    S_AXI_1_awprot   = 0;
-    S_AXI_1_awsize   = 0;
-    S_AXI_1_awvalid  = 0;
-    S_AXI_1_bready   = 0;
-    S_AXI_1_wdata    = 0;
-    S_AXI_1_wlast    = 0;
-    S_AXI_1_wstrb    = 0;
-    S_AXI_1_wvalid   = 0;
-    S_AXI_1_araddr   = 0;
-    S_AXI_1_arburst  = 0;
-    S_AXI_1_arcache  = 0;
-    S_AXI_1_arlen    = 0;
-    S_AXI_1_arlock   = 0;
-    S_AXI_1_arprot   = 0;
-    S_AXI_1_arsize   = 0;
-    S_AXI_1_arvalid  = 0;
-    S_AXI_1_rready   = 0;
 
-    // Initialize extractor control signals
-    extractor_start  = 0;
-    extractor_cycle  = 0;
-
-    // Wait for reset deassertion
-    @(negedge reset_rtl);
+    S_AXI_1_awaddr = 0; S_AXI_1_awburst = 0; S_AXI_1_arcache = 0;
+    S_AXI_1_awlen = 0; S_AXI_1_awlock = 0; S_AXI_1_awprot = 0;
+    S_AXI_1_awsize = 0; S_AXI_1_awvalid = 0; S_AXI_1_bready = 0;
+    S_AXI_1_wdata = 0; S_AXI_1_wlast = 0; S_AXI_1_wstrb = 0; S_AXI_1_wvalid = 0;
+    S_AXI_1_araddr = 0; S_AXI_1_arburst = 0; S_AXI_1_arcache = 0;
+    S_AXI_1_arlen = 0; S_AXI_1_arlock = 0; S_AXI_1_arprot = 0;
+    S_AXI_1_arsize = 0; S_AXI_1_arvalid = 0; S_AXI_1_rready = 0;
     #20;
-    $display("-----------------------------------------------------");
-    $display("[TB] Populating memory with A matrix data...");
-    $display("-----------------------------------------------------");
+    reset_rtl = 1;
+    #20;
+    reset_rtl = 0;
+    #20;
+    // Program each row.
+    // 1) Write matrix A into memory, then verify
+    write_matrix_A();
+    verify_matrix_A();
     
+    $display("Memory programming complete.");
+    #100;
     
-
-
-    for (row = 0; row < 8; row = row + 1) begin
-        // For Word0: columns 0-3 for row 'row'
-        byte0 = row*8 + 1; // A[row][0]
-        byte1 = row*8 + 2; // A[row][1]
-        byte2 = row*8 + 3; // A[row][2]
-        byte3 = row*8 + 4; // A[row][3]
-        expected_word = {byte3, byte2, byte1, byte0}; // Pack MSB-first
-        axi4_write_S0(row*8 + 0, expected_word);
-        
-        // For Word1: columns 4-7 for row 'row'
-        byte0 = row*8 + 5; // A[row][4]
-        byte1 = row*8 + 6; // A[row][5]
-        byte2 = row*8 + 7; // A[row][6]
-        byte3 = row*8 + 8; // A[row][7]
-        expected_word = {byte3, byte2, byte1, byte0};
-        axi4_write_S0(row*8 + 4, expected_word);
-    end
-
-//---------------------------------------------------------------------
-// S_AXI_0 Read Validation
-//---------------------------------------------------------------------
-  $display("-----------------------------------------------------");
-  $display("[TB] Validating memory contents via S_AXI_0 reads...");
-  $display("-----------------------------------------------------");
-  for (row = 0; row < 8; row = row + 1) begin
-      // Validate first word: columns 0-3 for row 'row'
-      axi4_read_S0(row*8 + 0, word_data);
-      byte0 = row*8 + 1;  // A[row][0]
-      byte1 = row*8 + 2;  // A[row][1]
-      byte2 = row*8 + 3;  // A[row][2]
-      byte3 = row*8 + 4;  // A[row][3]
-      expected_word = {byte3, byte2, byte1, byte0}; // Pack MSB-first
-      if (word_data !== expected_word) begin
-         $display("[ERROR] S_AXI_0 validation failed at row %0d word0: Expected 0x%08h, Got 0x%08h", 
-                  row, expected_word, word_data);
-         $finish;
-      end
-
-      // Validate second word: columns 4-7 for row 'row'
-      axi4_read_S0(row*8 + 4, word_data);
-      byte0 = row*8 + 5;  // A[row][4]
-      byte1 = row*8 + 6;  // A[row][5]
-      byte2 = row*8 + 7;  // A[row][6]
-      byte3 = row*8 + 8;  // A[row][7]
-      expected_word = {byte3, byte2, byte1, byte0};
-      if (word_data !== expected_word) begin
-         $display("[ERROR] S_AXI_0 validation failed at row %0d word1: Expected 0x%08h, Got 0x%08h", 
-                  row, expected_word, word_data);
-         $finish;
-      end
-      $display("[TB] S_AXI_0: Row %0d validated.", row);
-  end
-
-  $display("-----------------------------------------------------");
-  $display("[TB] S_AXI_0 memory read validation passed.");
-  $display("-----------------------------------------------------");
-
-  //---------------------------------------------------------------------
-  // S_AXI_1 Read Validation
-  //---------------------------------------------------------------------
-  $display("-----------------------------------------------------");
-  $display("[TB] Validating memory contents via S_AXI_1 reads...");
-  $display("-----------------------------------------------------");
-  for (row = 0; row < 8; row = row + 1) begin
-      // Validate first word: columns 0-3 for row 'row'
-      axi4_read_S1(row*8 + 0, word_data);
-      byte0 = row*8 + 1;
-      byte1 = row*8 + 2;
-      byte2 = row*8 + 3;
-      byte3 = row*8 + 4;
-      expected_word = {byte3, byte2, byte1, byte0};
-      if (word_data !== expected_word) begin
-         $display("[ERROR] S_AXI_1 validation failed at row %0d word0: Expected 0x%08h, Got 0x%08h", 
-                  row, expected_word, word_data);
-         $finish;
-      end
-
-      // Validate second word: columns 4-7 for row 'row'
-      axi4_read_S1(row*8 + 4, word_data);
-      byte0 = row*8 + 5;
-      byte1 = row*8 + 6;
-      byte2 = row*8 + 7;
-      byte3 = row*8 + 8;
-      expected_word = {byte3, byte2, byte1, byte0};
-      if (word_data !== expected_word) begin
-         $display("[ERROR] S_AXI_1 validation failed at row %0d word1: Expected 0x%08h, Got 0x%08h", 
-                  row, expected_word, word_data);
-         $finish;
-      end
-      $display("[TB] S_AXI_1: Row %0d validated.", row);
-  end
-
-  $display("-----------------------------------------------------");
-  $display("[TB] Memory read validation passed for both S_AXI_0 and S_AXI_1.");
-  $display("-----------------------------------------------------");
-    reset_signals();
-    //===========================================================================
-    // Extraction Tests
-    //===========================================================================
-    $display("-----------------------------------------------------");
-    $display("[TB] Starting extraction tests on A matrix...");
-    $display("-----------------------------------------------------");
-    // Test cycles from 0 to 15 (cycle 15 is out-of-range and should yield zeros)
-    for (c = 0; c < 16; c = c + 1) begin
-      extractor_cycle = c[3:0];
-      extractor_start = 1;
+    //-------------------------------------------------------------------------
+    // Extraction Test.
+    // First, trigger matrix load via load_start_extr.
+    // Then, for cycles 0-14, pulse start_extr and compare the output.
+    //-------------------------------------------------------------------------
+    error_flag = 0;
+    // Trigger matrix load for the extractor.
+    $display("Triggering matrix load in extractor...");
+    load_start_extr = 1;
+    
+    wait(matrix_loaded);
+    @(posedge sys_clock);
+    @(posedge sys_clock);
+    
+    // Test extraction for cycles 0 to 14.
+    for (t = 0; t < 15; t = t + 1) begin
+      // If your tool does not support t[3:0], use: cycle_extr = t & 4'hF;
+      cycle_extr = t & 4'hF;
+      start_extr = 1;
+      
       @(posedge sys_clock);
-      extractor_start = 0;
+      @(posedge sys_clock);
+      // Wait until extraction valid is asserted.
+      wait_cycles = 1;
+      // while (!valid_extr && wait_cycles < 100) begin
+      //   @(posedge sys_clock);
+      //   wait_cycles = wait_cycles + 1;
+      // end
       
-      // Wait (with timeout) for valid output from extractor
-      timeout = 200;
-      while (!extractor_valid && timeout > 0) begin
-        @(posedge sys_clock);
-        timeout = timeout - 1;
-      end
-      if (timeout == 0) begin
-        $display("[ERROR] Extraction timeout for cycle %0d", c);
-        $finish;
-      end
+      $display("Waiting for a_flat_out at extraction cycle %0d: %0d clock cycles elapsed", t, wait_cycles);
       
-      // Compute expected extraction.
-      expected_extraction = 64'd0;
-      if (c > 14) begin
-         expected_extraction = 64'd0;
+      expected = 64'd0;
+      if (t <= 7) begin
+        for (i_idx = 0; i_idx <= t; i_idx = i_idx + 1) begin
+          expected_byte = (i_idx * 8) + ((t - i_idx) + 1);
+          expected = expected | ( {56'd0, expected_byte} << (i_idx*8) );
+        end
       end else begin
-         integer start_i, end_i, i;
-         if (c <= 7) begin
-            start_i = 0;
-            end_i   = c;
-         end else begin
-            start_i = c - 7;
-            end_i   = 7;
-         end
-         for (i = start_i; i <= end_i; i = i + 1) begin
-            // For row i, column = c - i.
-            expected_byte = i*8 + (c - i) + 1;
-            expected_extraction = expected_extraction | ({56'd0, expected_byte} << (i*8));
-         end
+        for (i_idx = t - 7; i_idx < 8; i_idx = i_idx + 1) begin
+          expected_byte = (i_idx * 8) + ((t - i_idx) + 1);
+          expected = expected | ( {56'd0, expected_byte} << (i_idx*8) );
+        end
       end
       
-      $display("[TB] Cycle %0d: Expected Extraction = 0x%016h, Got = 0x%016h", c, expected_extraction, extracted_flat);
-      if (extracted_flat !== expected_extraction) begin
-         $display("[ERROR] Extraction mismatch at cycle %0d", c);
-         $finish;
-      end else begin
-         $display("[TB] Cycle %0d passed.", c);
-      end
-      repeat(2) @(posedge sys_clock);
+      if (a_flat_out_extr !== expected)
+         $display("[ERROR] Cycle %0d: Expected 0x%016h, Got 0x%016h", t, expected, a_flat_out_extr);
+      else
+         $display("[PASS] Cycle %0d: Output 0x%016h matches expected.", t, a_flat_out_extr);
+         
+      // start_extr = 0;
+      // wait_cycles = 2;
+      // while (valid_extr && wait_cycles < 100) begin
+      //   @(posedge sys_clock);
+      //   wait_cycles = wait_cycles + 1;
+      // end
     end
-
-    $display("-----------------------------------------------------");
-    $display("[TB] All extraction tests passed successfully.");
-    $display("-----------------------------------------------------");
+    
+    $display("Extraction tests completed.");
     #50;
     $finish;
   end
 
-  //===========================================================================
-  // Overall Simulation Timeout
-  //===========================================================================
-  initial begin
-    #20000;
-    $display("[ERROR] Simulation timed out.");
-    $finish;
-  end
-
+  initial begin : timeout_watch
+                #500000; // e.g. 100k ns
+                $display("[ERROR] TIMEOUT: Stopping simulation.");
+                $stop;
+            end
+  
 endmodule
-
-
-
