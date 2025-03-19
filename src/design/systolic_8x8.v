@@ -4,32 +4,24 @@ module systolic_array_8x8 #(
     parameter data_width = 8,              // Width of input data (e.g., 8 bits)
     parameter acc_width = 2 * data_width   // Width of accumulated output
 )(
-    input wire clk,                        // System clock
+    input wire clk_buf,                        // System clock
     input wire rst,                        // Asynchronous reset
     input wire en,                         // Enable signal
     input wire [8 * data_width - 1:0] a_in_flat, // Flattened input for A (8x8 matrix)
     input wire [8 * data_width - 1:0] b_in_flat, // Flattened input for B (8x8 matrix)
     output wire [8 * data_width - 1:0] a_out_flat, // Flattened output for A
     output wire [8 * data_width - 1:0] b_out_flat, // Flattened output for B
-    output wire [64 * acc_width - 1:0] c_out_flat,       // Flattened output for C (8x8 matrix)
-    output wire locked
+    output wire [64 * acc_width - 1:0] c_out_flat       // Flattened output for C (8x8 matrix)
+    // output wire locked
 );
 
-    wire clk_buf;
-    wire locked;
+    // wire clk_buf;
+    // wire locked;
     reg rst_sync;
-    clk_2x2 clk_inst(
-        .reset(rst),
-        .clk_in1(clk),
-        .clk_out1(clk_buf),
-        .locked(locked)
-    );
-    assign clock_locked = locked;
+    
     // Synchronized Reset Logic
     always @(posedge clk_buf or posedge rst) begin
         if (rst) begin
-            rst_sync <= 1'b1;
-        end else if (!locked) begin
             rst_sync <= 1'b1;
         end else begin
             rst_sync <= 1'b0;

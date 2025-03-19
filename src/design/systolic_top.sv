@@ -66,26 +66,18 @@ module top_systolic_integration #(
     output wire                      S_AXI_0_rlast,
     input  wire                      S_AXI_0_rready,
     output wire [1:0]                S_AXI_0_rresp,
-    output wire                      S_AXI_0_rvalid
+    output wire                      S_AXI_0_rvalid,
+    output wire                     clk_locked
 );
 
-    //--------------------------------------------------------------------------
-    // APB Slave (with simple memory array)
-    //--------------------------------------------------------------------------
-    apb_slave #(
-        .ADDR_WIDTH (APB_ADDR_WIDTH),
-        .DATA_WIDTH (32)
-    ) u_apb_slave (
-        .PCLK    (PCLK),
-        .PRESETn (PRESETn),
-        .PSEL    (PSEL),
-        .PENABLE (PENABLE),
-        .PWRITE  (PWRITE),
-        .PADDR   (PADDR),
-        .PWDATA  (PWDATA),
-        .PRDATA  (PRDATA),
-        .PREADY  (PREADY),
-        .PSLVERR (PSLVERR)
+    reg                       locked;
+    assign clk_locked = locked;
+    wire clk_buf;
+    clk_2x2 clk_inst(
+        .reset(rst),
+        .clk_in1(sys_clock),
+        .clk_out1(clk_buf),
+        .locked(locked)
     );
 
     // For demonstration, define addresses for simple control/status:
@@ -96,19 +88,58 @@ module top_systolic_integration #(
     reg  [31:0] reg_control;
     reg  [31:0] reg_status;
 
+    //--------------------------------------------------------------------------
+    // APB Slave (with simple memory array)
+    //--------------------------------------------------------------------------
+    apb_slave #(
+        .ADDR_WIDTH (APB_ADDR_WIDTH),
+        .DATA_WIDTH (32),
+        .ADDR_CONTROL(ADDR_CONTROL),
+        .ADDR_STATUS(ADDR_STATUS)
+    ) u_apb_slave (
+        .PCLK    (PCLK),
+        .PRESETn (PRESETn),
+        .PSEL    (PSEL),
+        .PENABLE (PENABLE),
+        .PWRITE  (PWRITE),
+        .PADDR   (PADDR),
+        .PWDATA  (PWDATA),
+        .PRDATA  (PRDATA),
+        .PREADY  (PREADY),
+        .PSLVERR (PSLVERR),
+        // Tie in your top-level signals
+        .ext_status  (reg_status),
+        .ext_control (reg_control)
+    );
+
+    reg  busy;
+    reg  done;
+
     wire start = reg_control[0];  // external "start" bit from the SoC (via APB)
     // We'll produce busy/done internally
 
-    // Read from slave memory on each APB clock
-    always_ff @(posedge PCLK or negedge PRESETn) begin
-        if (!PRESETn) begin
-            reg_control <= 32'b0;
-            reg_status  <= 32'b0;
+    // Map busy/done into your APB status register
+    always @(posedge clk_buf or posedge sys_reset) begin
+        if (sys_reset) begin
+            reg_status <= 32'b0;
         end else begin
-            reg_control <= u_apb_slave.memory[ADDR_CONTROL];
-            // We will write reg_status back into memory[ADDR_STATUS] below
+            reg_status[0] <= busy;
+            reg_status[1] <= done;
+            // others bits 2..31 => 0 or other flags
+            // u_apb_slave.memory[ADDR_STATUS] <= reg_status;
         end
     end
+
+    // // Read from slave memory on each APB clock
+    // always_ff @(posedge PCLK or negedge PRESETn) begin
+    //     if (!PRESETn) begin
+    //         reg_control <= 32'b0;
+    //         reg_status  <= 32'b0;
+    //     end else begin
+    //         reg_control <= u_apb_slave.memory[ADDR_CONTROL];
+    //         // We will write reg_status back into memory[ADDR_STATUS] below
+    //     end
+    // end
 
     //--------------------------------------------------------------------------
     // Dual-Port Memory for HPC
@@ -131,23 +162,55 @@ module top_systolic_integration #(
     reg [3:0]                S_AXI_1_wstrb;
     reg                      S_AXI_1_wvalid;
 
-    reg [AXI_ADDR_WIDTH-1:0] S_AXI_1_araddr;
-    reg [1:0]                S_AXI_1_arburst;
-    reg [3:0]                S_AXI_1_arcache;
-    reg [7:0]                S_AXI_1_arlen;
-    reg                      S_AXI_1_arlock;
-    reg [2:0]                S_AXI_1_arprot;
-    reg                      S_AXI_1_arready;
-    reg [2:0]                S_AXI_1_arsize;
-    reg                      S_AXI_1_arvalid;
-    reg [AXI_DATA_WIDTH-1:0] S_AXI_1_rdata;
-    reg                      S_AXI_1_rlast;
-    reg                      S_AXI_1_rready;
-    reg [1:0]                S_AXI_1_rresp;
-    reg                      S_AXI_1_rvalid;
+    wire [AXI_ADDR_WIDTH-1:0] S_AXI_1_araddr;
+    wire [1:0]                S_AXI_1_arburst;
+    wire [3:0]                S_AXI_1_arcache;
+    wire [7:0]                S_AXI_1_arlen;
+    wire                      S_AXI_1_arlock;
+    wire [2:0]                S_AXI_1_arprot;
+    wire                      S_AXI_1_arready;
+    wire [2:0]                S_AXI_1_arsize;
+    wire                      S_AXI_1_arvalid;
+    wire [AXI_DATA_WIDTH-1:0] S_AXI_1_rdata;
+    wire                      S_AXI_1_rlast;
+    wire                      S_AXI_1_rready;
+    wire [1:0]                S_AXI_1_rresp;
+    wire                      S_AXI_1_rvalid;
+
+    wire [AXI_ADDR_WIDTH-1:0] extractor_A_araddr;
+    wire [1:0]                extractor_A_arburst;
+    wire [3:0]                extractor_A_arcache;
+    wire [7:0]                extractor_A_arlen;
+    wire                      extractor_A_arlock;
+    wire [2:0]                extractor_A_arprot;
+    wire                      extractor_A_arready;
+    wire [2:0]                extractor_A_arsize;
+    wire                      extractor_A_arvalid;
+    wire [AXI_DATA_WIDTH-1:0] extractor_A_rdata;
+    wire                      extractor_A_rlast;
+    wire                      extractor_A_rready;
+    wire [1:0]                extractor_A_rresp;
+    wire                      extractor_A_rvalid;
+
+    wire [AXI_ADDR_WIDTH-1:0] extractor_B_araddr;
+    wire [1:0]                extractor_B_arburst;
+    wire [3:0]                extractor_B_arcache;
+    wire [7:0]                extractor_B_arlen;
+    wire                      extractor_B_arlock;
+    wire [2:0]                extractor_B_arprot;
+    wire                      extractor_B_arready;
+    wire [2:0]                extractor_B_arsize;
+    wire                      extractor_B_arvalid;
+    wire [AXI_DATA_WIDTH-1:0] extractor_B_rdata;
+    wire                      extractor_B_rlast;
+    wire                      extractor_B_rready;
+    wire [1:0]                extractor_B_rresp;
+    wire                      extractor_B_rvalid;
+
+    // reg                      extractor_switch;
 
     memory_block_wrapper u_memory (
-        .sys_clock      (sys_clock),
+        .sys_clock      (clk_buf),
         .reset_rtl      (sys_reset),
 
         // SoC side (S_AXI_0)
@@ -224,61 +287,101 @@ module top_systolic_integration #(
     wire        a_valid;
     reg         a_extractor_start;
     reg  [3:0]  a_extractor_cycle;
+    reg matrix_A_loaded;
+    reg matrix_B_loaded;
+    reg load_start_extr_A;
 
     axi_a_input_extractor_top #(
         .BASE_ADDR (BASE_ADDR_A)
     )extractorA (
-        .clk         (sys_clock),
+        .clk         (clk_buf),
         .rst         (sys_reset),
         .start       (a_extractor_start),
-        .cycle       (a_extractor_cycle),
+        .load_start(load_start_extr_A),
+        // .cycle       (a_extractor_cycle),
         .a_flat_out  (a_flat_out),
-        .valid       (a_valid),
+        .input_loaded(matrix_A_loaded),
+        // .valid       (a_valid),
         // Connect S_AXI_1 read for A
-        .m_axi_araddr(S_AXI_1_araddr),
-        .m_axi_arsize(S_AXI_1_arsize ),
-        .m_axi_arvalid(S_AXI_1_arvalid),
-        .m_axi_arburst(S_AXI_1_arburst),
-        .m_axi_arcache(S_AXI_1_arcache),
-        .m_axi_arlen(S_AXI_1_arlen  ),
-        .m_axi_arlock(S_AXI_1_arlock ),
-        .m_axi_arprot(S_AXI_1_arprot ),
-        .m_axi_arready(S_AXI_1_arready),
-        .m_axi_rdata(S_AXI_1_rdata),
-        .m_axi_rvalid(S_AXI_1_rvalid),
-        .m_axi_rready(S_AXI_1_rready),
-        .m_axi_rlast(S_AXI_1_rlast)
+        .m_axi_araddr(extractor_A_araddr),
+        .m_axi_arsize(extractor_A_arsize ),
+        .m_axi_arvalid(extractor_A_arvalid),
+        .m_axi_arburst(extractor_A_arburst),
+        .m_axi_arcache(extractor_A_arcache),
+        .m_axi_arlen(extractor_A_arlen  ),
+        .m_axi_arlock(extractor_A_arlock ),
+        .m_axi_arprot(extractor_A_arprot ),
+        .m_axi_arready(extractor_A_arready),
+        .m_axi_rdata(extractor_A_rdata),
+        .m_axi_rvalid(extractor_A_rvalid),
+        .m_axi_rready(extractor_A_rready),
+        .m_axi_rlast(extractor_A_rlast)
     );
 
     wire [63:0] b_flat_out;
     wire        b_valid;
     reg         b_extractor_start;
     reg  [3:0]  b_extractor_cycle;
+    reg        load_start_extr_B;
+    
 
     axi_a_input_extractor_top #(
         .BASE_ADDR (BASE_ADDR_B)
     ) extractorB (
-        .clk         (sys_clock),
+        .clk         (clk_buf),
         .rst         (sys_reset),
         .start       (b_extractor_start),
-        .cycle       (b_extractor_cycle),
+        .load_start(load_start_extr_B),
+        // .cycle       (b_extractor_cycle),
         .a_flat_out  (b_flat_out), // effectively B
-        .valid       (b_valid),
+        .input_loaded(matrix_B_loaded),
+        // .valid       (b_valid),
         // S_AXI_1 read channel for B
-        .m_axi_araddr(S_AXI_1_araddr),
-        .m_axi_arsize(S_AXI_1_arsize ),
-        .m_axi_arvalid(S_AXI_1_arvalid),
-        .m_axi_arburst(S_AXI_1_arburst),
-        .m_axi_arcache(S_AXI_1_arcache),
-        .m_axi_arlen(S_AXI_1_arlen  ),
-        .m_axi_arlock(S_AXI_1_arlock ),
-        .m_axi_arprot(S_AXI_1_arprot ),
-        .m_axi_arready(S_AXI_1_arready),
-        .m_axi_rdata(S_AXI_1_rdata),
-        .m_axi_rvalid(S_AXI_1_rvalid),
-        .m_axi_rready(S_AXI_1_rready),
-        .m_axi_rlast(S_AXI_1_rlast)
+        .m_axi_araddr(extractor_B_araddr),
+        .m_axi_arsize(extractor_B_arsize ),
+        .m_axi_arvalid(extractor_B_arvalid),
+        .m_axi_arburst(extractor_B_arburst),
+        .m_axi_arcache(extractor_B_arcache),
+        .m_axi_arlen(extractor_B_arlen  ),
+        .m_axi_arlock(extractor_B_arlock ),
+        .m_axi_arprot(extractor_B_arprot ),
+        .m_axi_arready(extractor_B_arready),
+        .m_axi_rdata(extractor_B_rdata),
+        .m_axi_rvalid(extractor_B_rvalid),
+        .m_axi_rready(extractor_B_rready),
+        .m_axi_rlast(extractor_B_rlast)
     );
+
+    // Arbitration select signal: 
+    // 0 selects extractor A, 1 selects extractor B.
+    reg sel_extractor;
+
+    // Mux for the read address channel:
+    assign S_AXI_1_araddr  = (sel_extractor == 1'b0) ? extractor_A_araddr : extractor_B_araddr;
+    assign S_AXI_1_arburst = (sel_extractor == 1'b0) ? extractor_A_arburst : extractor_B_arburst;
+    assign S_AXI_1_arcache = (sel_extractor == 1'b0) ? extractor_A_arcache : extractor_B_arcache;
+    assign S_AXI_1_arlen   = (sel_extractor == 1'b0) ? extractor_A_arlen   : extractor_B_arlen;
+    assign S_AXI_1_arlock  = (sel_extractor == 1'b0) ? extractor_A_arlock  : extractor_B_arlock;
+    assign S_AXI_1_arprot  = (sel_extractor == 1'b0) ? extractor_A_arprot  : extractor_B_arprot;
+    assign S_AXI_1_arsize  = (sel_extractor == 1'b0) ? extractor_A_arsize  : extractor_B_arsize;
+    assign S_AXI_1_arvalid = (sel_extractor == 1'b0) ? extractor_A_arvalid : extractor_B_arvalid;
+
+    // Route the ARREADY signal back to the appropriate extractor:
+    assign extractor_A_arready = (sel_extractor == 1'b0) ? S_AXI_1_arready : 1'b0;
+    assign extractor_B_arready = (sel_extractor == 1'b1) ? S_AXI_1_arready : 1'b0;
+    // Mux for the read data channel:
+    // Return the read data to the active extractor; the inactive one gets a default value.
+    assign extractor_A_rdata  = (sel_extractor == 1'b0) ? S_AXI_1_rdata : {AXI_DATA_WIDTH{1'b0}};
+    assign extractor_A_rlast  = (sel_extractor == 1'b0) ? S_AXI_1_rlast : 1'b0;
+    assign extractor_A_rresp  = (sel_extractor == 1'b0) ? S_AXI_1_rresp : 2'b0;
+    assign extractor_A_rvalid = (sel_extractor == 1'b0) ? S_AXI_1_rvalid : 1'b0;
+    assign extractor_B_rdata  = (sel_extractor == 1'b1) ? S_AXI_1_rdata : {AXI_DATA_WIDTH{1'b0}};
+    assign extractor_B_rlast  = (sel_extractor == 1'b1) ? S_AXI_1_rlast : 1'b0;
+    assign extractor_B_rresp  = (sel_extractor == 1'b1) ? S_AXI_1_rresp : 2'b0;
+    assign extractor_B_rvalid = (sel_extractor == 1'b1) ? S_AXI_1_rvalid : 1'b0;
+
+    // The memory's rready comes from whichever extractor is active:
+    assign S_AXI_1_rready = (sel_extractor == 1'b0) ? extractor_A_rready : extractor_B_rready;
 
     // We will combine a_flat_out, b_flat_out into the systolic array input.
     reg [8*DATA_WIDTH -1:0] a_in_flat;
@@ -287,17 +390,6 @@ module top_systolic_integration #(
     // or you do it in the extractor. 
     // For simplicity, let's directly assume a_flat_out is the correct 64 bits for the array:
    
-
-    function [8*8*DATA_WIDTH-1:0] diag64_to_8x8;
-        input [63:0] diag;
-        integer i;
-        begin
-            diag64_to_8x8 = 0;
-            for (i=0; i<8; i=i+1) begin
-                diag64_to_8x8[i*DATA_WIDTH +: DATA_WIDTH] = diag[i*8 +: 8];
-            end
-        end
-    endfunction
 
     task display_matrix;
         input [64 * ACC_WIDTH - 1:0] flat_matrix; // Flattened matrix input
@@ -324,7 +416,6 @@ module top_systolic_integration #(
     reg [8*DATA_WIDTH -1:0] a_out_flat;
     reg [8*DATA_WIDTH -1:0] b_out_flat;
     wire [64*ACC_WIDTH   -1:0] c_out_flat;
-    wire                       locked;
     reg                       systol_en;
     reg                       systol_reset;
 
@@ -332,15 +423,14 @@ module top_systolic_integration #(
         .data_width (DATA_WIDTH),
         .acc_width  (ACC_WIDTH)
     ) u_systolic (
-        .clk         (sys_clock),
+        .clk_buf         (clk_buf),
         .rst         (systol_reset),
         .en          (systol_en),
         .a_in_flat   (a_in_flat),
         .b_in_flat   (b_in_flat),
         .a_out_flat  (a_out_flat),
         .b_out_flat  (b_out_flat),
-        .c_out_flat  (c_out_flat),
-        .locked      (locked)
+        .c_out_flat  (c_out_flat)
     );
 
     //--------------------------------------------------------------------------
@@ -349,7 +439,7 @@ module top_systolic_integration #(
     reg writeback_done;
     reg writeback_start;
     writeback_controller u_writeback (
-        .clk         (sys_clock),
+        .clk         (clk_buf),
         .rst         (sys_reset),
         .start       (writeback_start),
         .c_in_flat   (c_out_flat),
@@ -384,23 +474,22 @@ module top_systolic_integration #(
     //--------------------------------------------------------------------------
     // Internal FSM: Single "start", multiple cycles
     //--------------------------------------------------------------------------
-    reg  busy;
-    reg  done;
+    
     reg  [3:0] cycle_counter;
     reg  [5:0] pipeline_counter;
     reg  [2:0] state;
 
     // State definitions
     localparam ST_IDLE   = 0,
-           ST_A_EXTR   = 1, // Start A extraction, wait for a_valid
-           ST_B_EXTR   = 2,
+           ST_MATR_EXTR   = 1, // Start A extraction, wait for a_valid
+           ST_MATR_PROP   = 2,
            ST_CYCLE = 4, // Present diagonal for 1 clock
            ST_ZERO   = 3, // Bubble cycle for 1 clock
            ST_PIPE   = 5, // Wait 19 cycles after last diagonal
            ST_WRITEB = 6, // Start writeback
            ST_DONE   = 7;
 
-    always @(posedge sys_clock or posedge sys_reset) begin
+    always @(posedge clk_buf or posedge sys_reset) begin
         
         if (sys_reset) begin
             state <= ST_IDLE;
@@ -411,10 +500,13 @@ module top_systolic_integration #(
             cycle_counter     <= 0;
             busy              <= 0;
             done              <= 0;
+            load_start_extr_A <= 0;
+            load_start_extr_B <= 0;
             systol_en            <= 0;
             systol_reset        <= 1;
             a_in_flat <= 0;
             b_in_flat <= 0;
+            sel_extractor <= 0;
 
             // Also zero out the systolic array inputs if you store them in regs
         end else begin
@@ -427,44 +519,37 @@ module top_systolic_integration #(
                         busy <= 1'b1;
                         done <= 0;
                         cycle_counter <= 0;
-                        a_extractor_cycle <= 0;
-                        b_extractor_cycle <= 0;
-                        a_extractor_start <= 1'b1;
-                        b_extractor_start <= 1'b0;
+                        load_start_extr_A <= 1;
+                        
                         systol_en            <= 1'b1;
-                        state <= ST_A_EXTR;
+                        state <= ST_MATR_EXTR;
                     end
                 end
 
                 //--------------------------------------------------------
-                // ST_A_EXTR: Wait for A extractor to produce valid
+                // ST_MATR_EXTR: Wait for A extractor to produce valid
                 //--------------------------------------------------------
-                ST_A_EXTR: begin
+                ST_MATR_EXTR: begin
                     // Keep a_extractor_start = 1 until we see a_valid,
                     // or deassert after 1 cycle if that's how your extractor works
-                    if (a_valid) begin
-                        // We have A's diagonal data. Next, do B extraction
-                        
-                        b_extractor_start <= 1'b1; // start B
-                        state <= ST_B_EXTR;
+                    if (matrix_A_loaded) begin
+                        load_start_extr_B <= 1;
+                        sel_extractor <= 1;
+                    end
+                    if (matrix_B_loaded) begin
+                        a_extractor_start <= 1;
+                        b_extractor_start <= 1;
+                        state <= ST_MATR_PROP;
                     end
                 end
 
                 //--------------------------------------------------------
-                // ST_B_EXTR: Wait for B extractor to produce valid
+                // ST_MATR_PROP: Wait for B extractor to produce valid
                 //--------------------------------------------------------
-                ST_B_EXTR: begin
-                    // Keep b_extractor_start = 1 until b_valid
-                    if (b_valid) begin
-                        b_extractor_start <= 1'b0; // done with B
-                        a_extractor_start <= 1'b0; // done with A
-                        // Now we have a_flat_out, b_flat_out
-                        // Present them to the systolic array for 1 clock
-                        a_in_flat <= a_flat_out;
-                        b_in_flat <= b_flat_out;
-
-                        state <= ST_ZERO;
-                    end
+                ST_MATR_PROP: begin
+                    a_in_flat <= a_flat_out;
+                    b_in_flat <= b_flat_out;
+                    state <= ST_ZERO;
                 end
 
                 // ST_INJECT: Present the diagonal to the systolic array for 1 clock
@@ -474,27 +559,18 @@ module top_systolic_integration #(
                     // Next cycle, we zero the inputs
                     a_in_flat <= 0;
                     b_in_flat <= 0; 
-                    state <= ST_CYCLE;
-                end
-
-                // ST_ZERO: Insert a bubble cycle (zero all inputs) for exactly 1 clock
-                ST_CYCLE: begin
-                    // Zero everything for the next cycle
-                    // Then move on to next diagonal or finish
-                    if (cycle_counter < 14) begin
+                    if (cycle_counter < 15) begin
                         display_matrix(c_out_flat, "Actual Output Matrix (C)");
                         cycle_counter <= cycle_counter + 1;
-                        a_extractor_cycle <= cycle_counter + 1;
-                        b_extractor_cycle <= cycle_counter + 1;
                         // Fire new extraction
-                        a_extractor_start <= 1'b1;
-                        b_extractor_start <= 1'b0;
-                        state <= ST_A_EXTR;
+                        state <= ST_MATR_PROP;
                     end
                     else begin
                         // All diagonals processed
                         $display("[top] all cycles piped in");
                         pipeline_counter <= 0;
+                        a_extractor_start <= 1'b0;
+                        b_extractor_start <= 1'b0;
                         state <= ST_PIPE;
                     end
                 end
@@ -502,7 +578,7 @@ module top_systolic_integration #(
                 // ST_PIPE: Wait 19 cycles for systolic array to flush
                 //==========================================================
                 ST_PIPE: begin
-                    if (pipeline_counter < 25) begin
+                    if (pipeline_counter < 20) begin
                         display_matrix(c_out_flat, "Actual Output Matrix (C)");
                         pipeline_counter <= pipeline_counter + 1;
                     end
@@ -536,7 +612,9 @@ module top_systolic_integration #(
                     systol_reset        <= 0;
                     busy <= 1'b0;
                     done <= 1'b1;
+                    if(!start) begin
                     state <= ST_IDLE; // or remain in ST_DONE if you want latched done
+                    end
                 end
 
                 default: state <= ST_IDLE;
@@ -545,16 +623,6 @@ module top_systolic_integration #(
     end
 
 
-    // Map busy/done into your APB status register
-    always @(posedge sys_clock or posedge sys_reset) begin
-        if (sys_reset) begin
-            reg_status <= 32'b0;
-        end else begin
-            reg_status[0] <= busy;
-            reg_status[1] <= done;
-            // others bits 2..31 => 0 or other flags
-            u_apb_slave.memory[ADDR_STATUS] <= reg_status;
-        end
-    end
+    
 
 endmodule

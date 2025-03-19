@@ -236,8 +236,9 @@ module writeback_controller (
              S_INIT = 3'd1,
              S_AW   = 3'd2,
              S_W    = 3'd3,
-             S_B    = 3'd4,
-             S_DONE = 3'd5;
+             S_N    = 3'd4,
+             S_B    = 3'd5,
+             S_DONE = 3'd6;
 
   reg [2:0] state;
   // 6-bit counter to count from 0 to 63 (64 words)
@@ -296,7 +297,8 @@ module writeback_controller (
         end
 
         S_AW: begin
-          if (!m_axi_awready) begin
+          if (m_axi_awready) begin
+            m_axi_bready_reg <= 1'b1;
             // $display("[WB DEBUG] S_AW: AW handshake complete at time %0t, Addr = 0x%03h", $time, m_axi_awaddr_reg);
             m_axi_awvalid_reg <= 1'b0;  // Handshake complete.
             // Prepare first write data.
@@ -312,25 +314,32 @@ module writeback_controller (
         S_W: begin
           if (m_axi_wvalid_reg && m_axi_wready) begin
             // $display("[WB DEBUG] S_W: W handshake at time %0t, Word %0d written, Data = 0x%08h", $time, word_count, m_axi_wdata_reg);
-            if (word_count == 6'd63) begin
-              m_axi_wvalid_reg <= 1'b0;
-              m_axi_wlast_reg  <= 1'b0;
-              state            <= S_B;
-              m_axi_bready_reg <= 1'b1;  // Ready to receive the write response.
-              // $display("[WB DEBUG] S_W: Last word written. Transitioning to S_B at time %0t", $time);
-            end else begin
-              word_count       <= word_count + 1;
-              m_axi_wdata_reg  <= c_in_flat[((word_count + 1)*32) +: 32];
-              m_axi_wlast_reg  <= ((word_count + 1) == 6'd63) ? 1'b1 : 1'b0;
-              // Remain in S_W, waiting for the next handshake.
-            end
+            m_axi_wvalid_reg <= 1'b0;
+            state <= S_N;
           end
+        end
+
+        S_N: begin
+          if (word_count + 1 == 6'd63) begin
+            m_axi_wlast_reg  <= 1'b1;
+            state            <= S_B;
+              // Ready to receive the write response.
+            // $display("[WB DEBUG] S_W: Last word written. Transitioning to S_B at time %0t", $time);
+          end else begin
+            state <= S_W;
+          end
+          m_axi_wvalid_reg <= 1'b1;
+          
+          word_count       <= word_count + 1;
+          m_axi_wdata_reg  <= c_in_flat[((word_count + 1)*32) +: 32];
         end
 
         S_B: begin
           if (m_axi_bvalid) begin
             // $display("[WB DEBUG] S_B: B handshake received at time %0t. BRESP = 0x%0h", $time, m_axi_bresp);
             m_axi_bready_reg <= 1'b0;
+            m_axi_wlast_reg  <= 1'b0;
+            m_axi_wvalid_reg <= 1'b0;
             state            <= S_DONE;
           end
         end
@@ -338,7 +347,9 @@ module writeback_controller (
         S_DONE: begin
           done_reg <= 1'b1;
           // $display("[WB DEBUG] S_DONE: Writeback complete at time %0t", $time);
+          if (!start)begin
           state <= S_IDLE;
+          end
         end
 
         default: state <= S_IDLE;
